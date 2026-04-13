@@ -1,0 +1,8 @@
+.page {
+  padding: var(--space-16) 0;
+}
+
+.inner {
+  display: flex;
+  justify-content: center;
+}
