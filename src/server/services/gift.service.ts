@@ -69,3 +69,12 @@ export async function getGiftsBySender(senderId: string): Promise<Gift[]> {
 export async function getGiftsByRecipient(phone: string): Promise<Gift[]> {
   return [...gifts.values()].filter((g) => g.recipientPhone === phone);
 }
+
+export async function cancelGift(id: string): Promise<Gift | null> {
+  const gift = gifts.get(id);
+  if (!gift) return null;
+  gift.status = "cancelled";
+  gift.updatedAt = new Date();
+  gifts.set(id, gift);
+  return gift;
+}
