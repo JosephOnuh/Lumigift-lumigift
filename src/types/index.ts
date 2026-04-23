@@ -14,6 +14,7 @@ export interface User {
 export type GiftStatus =
   | "draft"
   | "pending_payment"
+  | "funded"
   | "locked"
   | "unlocked"
   | "claimed"
