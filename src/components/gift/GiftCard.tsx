@@ -11,6 +11,12 @@ interface GiftCardProps {
   perspective: "sender" | "recipient";
 }
 
+const EXPLORER_BASE = "https://stellar.expert/explorer/testnet/tx";
+
+function explorerUrl(txHash: string) {
+  return `${EXPLORER_BASE}/${txHash}`;
+}
+
 export function GiftCard({ gift, perspective }: GiftCardProps) {
   const router = useRouter();
   const isLocked = gift.status === "locked";
@@ -73,6 +79,32 @@ export function GiftCard({ gift, perspective }: GiftCardProps) {
 
       {gift.message && !isLocked && (
         <p className={styles.message}>{gift.message}</p>
+      )}
+
+      {gift.stellarTxHash && (
+        <div className={styles.meta}>
+          <span>Funding tx: </span>
+          <a
+            href={explorerUrl(gift.stellarTxHash)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {gift.stellarTxHash.slice(0, 8)}…
+          </a>
+        </div>
+      )}
+
+      {gift.claimTxHash && (
+        <div className={styles.meta}>
+          <span>Claim tx: </span>
+          <a
+            href={explorerUrl(gift.claimTxHash)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {gift.claimTxHash.slice(0, 8)}…
+          </a>
+        </div>
       )}
     </article>
   );
