@@ -3,6 +3,7 @@ import type { Gift, GiftStatus } from "@/types";
 import type { CreateGiftInput } from "@/types/schemas";
 import { initializePayment, ngnToKobo } from "@/lib/paystack";
 import { serverConfig } from "@/server/config";
+import { assertValidTransition } from "./gift-state-machine";
 
 // ─── Exchange rate helper ─────────────────────────────────────────────────────
 // In production, fetch from a live FX provider (e.g. Stellar DEX or Coingecko).
@@ -56,6 +57,7 @@ export async function getGiftById(id: string): Promise<Gift | null> {
 export async function updateGiftStatus(id: string, status: GiftStatus): Promise<Gift | null> {
   const gift = gifts.get(id);
   if (!gift) return null;
+  assertValidTransition(gift.status, status);
   gift.status = status;
   gift.updatedAt = new Date();
   gifts.set(id, gift);
