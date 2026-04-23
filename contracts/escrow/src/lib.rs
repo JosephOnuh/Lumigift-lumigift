@@ -1,4 +1,4 @@
-//! Zendvo Escrow Contract
+//! Lumigift Escrow Contract
 //!
 //! Locks USDC for a recipient until a predetermined timestamp.
 //! Only the designated recipient can claim after the unlock time.
@@ -6,8 +6,22 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, token, Address, Env, Symbol,
+    contract, contractimpl, contracterror, contracttype, token, Address, Env, Symbol,
 };
+
+// ─── Error enum ───────────────────────────────────────────────────────────────
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum EscrowError {
+    AlreadyInitialized = 1,
+    AlreadyClaimed     = 2,
+    StillLocked        = 3,
+    NotInitialized     = 4,
+    Unauthorized       = 5,
+    AlreadyCancelled   = 6,
+}
 
 // ─── Storage keys ─────────────────────────────────────────────────────────────
 
@@ -29,12 +43,6 @@ pub struct EscrowContract;
 #[contractimpl]
 impl EscrowContract {
     /// Initialize the escrow. Called once by the platform after deploying.
-    ///
-    /// * `sender`      – address that funded the escrow
-    /// * `recipient`   – address that may claim after `unlock_time`
-    /// * `token`       – USDC token contract address
-    /// * `amount`      – amount in stroops (7 decimal places)
-    /// * `unlock_time` – Unix timestamp (seconds) after which claim is allowed
     pub fn initialize(
         env: Env,
         sender: Address,
@@ -42,10 +50,9 @@ impl EscrowContract {
         token: Address,
         amount: i128,
         unlock_time: u64,
-    ) {
-        // Prevent re-initialization
+    ) -> Result<(), EscrowError> {
         if env.storage().instance().has(&DataKey::Sender) {
-            panic!("already initialized");
+            return Err(EscrowError::AlreadyInitialized);
         }
 
         sender.require_auth();
@@ -57,7 +64,6 @@ impl EscrowContract {
         env.storage().instance().set(&DataKey::UnlockTime, &unlock_time);
         env.storage().instance().set(&DataKey::Claimed, &false);
 
-        // Transfer USDC from sender into this contract
         let token_client = token::Client::new(&env, &token);
         token_client.transfer(&sender, &env.current_contract_address(), &amount);
 
@@ -65,15 +71,17 @@ impl EscrowContract {
             (Symbol::new(&env, "initialized"),),
             (sender, recipient, amount, unlock_time),
         );
+
+        Ok(())
     }
 
     /// Claim the escrowed funds. Only callable by the recipient after unlock_time.
-    pub fn claim(env: Env) {
+    pub fn claim(env: Env) -> Result<(), EscrowError> {
         let recipient: Address = env
             .storage()
             .instance()
             .get(&DataKey::Recipient)
-            .expect("not initialized");
+            .ok_or(EscrowError::NotInitialized)?;
 
         recipient.require_auth();
 
@@ -84,31 +92,30 @@ impl EscrowContract {
             .unwrap_or(false);
 
         if claimed {
-            panic!("already claimed");
+            return Err(EscrowError::AlreadyClaimed);
         }
 
         let unlock_time: u64 = env
             .storage()
             .instance()
             .get(&DataKey::UnlockTime)
-            .expect("not initialized");
+            .ok_or(EscrowError::NotInitialized)?;
 
-        let now = env.ledger().timestamp();
-        if now < unlock_time {
-            panic!("gift is still locked");
+        if env.ledger().timestamp() < unlock_time {
+            return Err(EscrowError::StillLocked);
         }
 
         let token: Address = env
             .storage()
             .instance()
             .get(&DataKey::Token)
-            .expect("not initialized");
+            .ok_or(EscrowError::NotInitialized)?;
 
         let amount: i128 = env
             .storage()
             .instance()
             .get(&DataKey::Amount)
-            .expect("not initialized");
+            .ok_or(EscrowError::NotInitialized)?;
 
         env.storage().instance().set(&DataKey::Claimed, &true);
 
@@ -119,32 +126,34 @@ impl EscrowContract {
             (Symbol::new(&env, "claimed"),),
             (recipient, amount),
         );
+
+        Ok(())
     }
 
     /// Read-only: returns (recipient, amount, unlock_time, claimed).
-    pub fn get_state(env: Env) -> (Address, i128, u64, bool) {
+    pub fn get_state(env: Env) -> Result<(Address, i128, u64, bool), EscrowError> {
         let recipient: Address = env
             .storage()
             .instance()
             .get(&DataKey::Recipient)
-            .expect("not initialized");
+            .ok_or(EscrowError::NotInitialized)?;
         let amount: i128 = env
             .storage()
             .instance()
             .get(&DataKey::Amount)
-            .expect("not initialized");
+            .ok_or(EscrowError::NotInitialized)?;
         let unlock_time: u64 = env
             .storage()
             .instance()
             .get(&DataKey::UnlockTime)
-            .expect("not initialized");
+            .ok_or(EscrowError::NotInitialized)?;
         let claimed: bool = env
             .storage()
             .instance()
             .get(&DataKey::Claimed)
             .unwrap_or(false);
 
-        (recipient, amount, unlock_time, claimed)
+        Ok((recipient, amount, unlock_time, claimed))
     }
 }
 
@@ -175,26 +184,42 @@ mod tests {
         let recipient = Address::generate(&env);
         let (token_id, token, token_admin) = create_token(&env, &sender);
 
-        // Mint 100 USDC to sender
         token_admin.mint(&sender, &100_000_000);
 
         let contract_id = env.register_contract(None, EscrowContract);
         let client = EscrowContractClient::new(&env, &contract_id);
 
-        let unlock_time: u64 = 1_000;
-        client.initialize(&sender, &recipient, &token_id, &100_000_000, &unlock_time);
-
-        // Advance ledger past unlock time
+        client.initialize(&sender, &recipient, &token_id, &100_000_000, &1_000);
         env.ledger().with_mut(|l| l.timestamp = 1_001);
-
         client.claim();
 
         assert_eq!(token.balance(&recipient), 100_000_000);
     }
 
     #[test]
-    #[should_panic(expected = "gift is still locked")]
-    fn test_claim_before_unlock_panics() {
+    fn test_double_initialize_returns_error() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let sender = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let (token_id, _, token_admin) = create_token(&env, &sender);
+        token_admin.mint(&sender, &200_000_000);
+
+        let contract_id = env.register_contract(None, EscrowContract);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        client.initialize(&sender, &recipient, &token_id, &100_000_000, &1_000);
+
+        let err = client
+            .try_initialize(&sender, &recipient, &token_id, &100_000_000, &1_000)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, EscrowError::AlreadyInitialized);
+    }
+
+    #[test]
+    fn test_claim_before_unlock_returns_error() {
         let env = Env::default();
         env.mock_all_auths();
 
@@ -207,6 +232,41 @@ mod tests {
         let client = EscrowContractClient::new(&env, &contract_id);
 
         client.initialize(&sender, &recipient, &token_id, &100_000_000, &9_999_999);
-        client.claim(); // should panic
+
+        let err = client.try_claim().unwrap_err().unwrap();
+        assert_eq!(err, EscrowError::StillLocked);
+    }
+
+    #[test]
+    fn test_double_claim_returns_error() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let sender = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let (token_id, _, token_admin) = create_token(&env, &sender);
+        token_admin.mint(&sender, &100_000_000);
+
+        let contract_id = env.register_contract(None, EscrowContract);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        client.initialize(&sender, &recipient, &token_id, &100_000_000, &1_000);
+        env.ledger().with_mut(|l| l.timestamp = 1_001);
+        client.claim();
+
+        let err = client.try_claim().unwrap_err().unwrap();
+        assert_eq!(err, EscrowError::AlreadyClaimed);
+    }
+
+    #[test]
+    fn test_get_state_not_initialized_returns_error() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, EscrowContract);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        let err = client.try_get_state().unwrap_err().unwrap();
+        assert_eq!(err, EscrowError::NotInitialized);
     }
 }
