@@ -58,3 +58,9 @@ export async function verifyPayment(reference: string): Promise<{
 
 /** Convert NGN to kobo. */
 export const ngnToKobo = (ngn: number) => Math.round(ngn * 100);
+
+/** Refund a Paystack transaction by reference. */
+export async function refundPayment(reference: string): Promise<{ status: string }> {
+  const { data } = await paystackClient.post("/refund", { transaction: reference });
+  return { status: data.data.status };
+}

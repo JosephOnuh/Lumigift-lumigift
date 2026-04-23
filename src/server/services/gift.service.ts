@@ -5,11 +5,11 @@ import { initializePayment, ngnToKobo } from "@/lib/paystack";
 import { serverConfig } from "@/server/config";
 
 // ─── Exchange rate helper ─────────────────────────────────────────────────────
-// In production, fetch from a live FX provider (e.g. Stellar DEX or Coingecko).
-const NGN_PER_USDC = 1600;
+import { getExchangeRate } from "@/server/services/exchange-rate.service";
 
-export function ngnToUsdc(ngn: number): string {
-  return (ngn / NGN_PER_USDC).toFixed(7);
+export async function ngnToUsdc(ngn: number): Promise<string> {
+  const { ngnPerUsdc } = await getExchangeRate();
+  return (ngn / ngnPerUsdc).toFixed(7);
 }
 
 // ─── In-memory store (replace with DB in production) ─────────────────────────
@@ -20,7 +20,7 @@ export async function createGift(
   input: CreateGiftInput
 ): Promise<{ gift: Gift; paymentUrl: string }> {
   const id = randomUUID();
-  const amountUsdc = ngnToUsdc(input.amountNgn);
+  const amountUsdc = await ngnToUsdc(input.amountNgn);
 
   const gift: Gift = {
     id,
@@ -68,4 +68,13 @@ export async function getGiftsBySender(senderId: string): Promise<Gift[]> {
 
 export async function getGiftsByRecipient(phone: string): Promise<Gift[]> {
   return [...gifts.values()].filter((g) => g.recipientPhone === phone);
+}
+
+export async function cancelGift(id: string): Promise<Gift | null> {
+  const gift = gifts.get(id);
+  if (!gift) return null;
+  gift.status = "cancelled";
+  gift.updatedAt = new Date();
+  gifts.set(id, gift);
+  return gift;
 }
