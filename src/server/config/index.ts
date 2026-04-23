@@ -50,4 +50,5 @@ export function validateServerConfig() {
   requireEnv("DATABASE_URL");
   requireEnv("NEXTAUTH_SECRET");
   requireEnv("STELLAR_SERVER_SECRET_KEY");
+  requireEnv("STRIPE_WEBHOOK_SECRET");
 }
