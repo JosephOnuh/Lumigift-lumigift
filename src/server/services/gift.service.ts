@@ -69,3 +69,23 @@ export async function getGiftsBySender(senderId: string): Promise<Gift[]> {
 export async function getGiftsByRecipient(phone: string): Promise<Gift[]> {
   return [...gifts.values()].filter((g) => g.recipientPhone === phone);
 }
+
+/** Store the Stellar transaction hash produced by the escrow initialize call. */
+export async function storeStellarTxHash(id: string, txHash: string): Promise<Gift | null> {
+  const gift = gifts.get(id);
+  if (!gift) return null;
+  gift.stellarTxHash = txHash;
+  gift.updatedAt = new Date();
+  gifts.set(id, gift);
+  return gift;
+}
+
+/** Store the Stellar transaction hash produced by the escrow claim call. */
+export async function storeClaimTxHash(id: string, txHash: string): Promise<Gift | null> {
+  const gift = gifts.get(id);
+  if (!gift) return null;
+  gift.claimTxHash = txHash;
+  gift.updatedAt = new Date();
+  gifts.set(id, gift);
+  return gift;
+}
