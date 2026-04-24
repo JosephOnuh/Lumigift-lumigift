@@ -1,8 +1,54 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import { headers } from "next/headers";
 import { verifyOtpSchema } from "@/types/schemas";
+import { serverConfig } from "@/server/config";
+import pool from "@/lib/db";
+import { sendNewDeviceAlert } from "@/lib/sms";
+import { getCountryFromIp } from "@/lib/device";
+import { createHash } from "crypto";
 
-// In production, replace with real DB lookups and OTP verification.
+function fingerprintFromHeaders(ua: string, lang: string, enc: string): string {
+  return createHash("sha256").update(`${ua}|${lang}|${enc}`).digest("hex");
+}
+
+async function handleDeviceCheck(
+  userId: string,
+  phone: string,
+  fingerprint: string,
+  ip: string
+): Promise<void> {
+  const { rows } = await pool.query(
+    "SELECT 1 FROM known_devices WHERE user_id = $1 AND fingerprint = $2",
+    [userId, fingerprint]
+  );
+
+  if (rows.length === 0) {
+    // New device — register it and send alert
+    await pool.query(
+      `INSERT INTO known_devices (user_id, fingerprint)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id, fingerprint) DO UPDATE SET last_seen_at = NOW()`,
+      [userId, fingerprint]
+    );
+
+    const [country] = await Promise.all([getCountryFromIp(ip)]);
+    const time = new Date().toUTCString();
+    const reportUrl = `${serverConfig.app.url}/api/v1/auth/report-login?uid=${encodeURIComponent(userId)}&fp=${encodeURIComponent(fingerprint)}`;
+
+    // Fire-and-forget — don't block login on SMS failure
+    sendNewDeviceAlert(phone, { time, country, reportUrl }).catch((err) =>
+      console.error("[auth] sendNewDeviceAlert failed:", err)
+    );
+  } else {
+    // Known device — refresh last_seen_at
+    await pool.query(
+      "UPDATE known_devices SET last_seen_at = NOW() WHERE user_id = $1 AND fingerprint = $2",
+      [userId, fingerprint]
+    );
+  }
+}
+
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
   pages: {
@@ -22,11 +68,29 @@ export const authOptions: NextAuthOptions = {
 
         // TODO: verify OTP from Redis/DB and load user record
         // Placeholder — replace with real verification
-        return {
+        const user = {
           id: "placeholder-user-id",
           phone: parsed.data.phone,
           name: "Lumigift User",
         };
+
+        // Device fingerprint check
+        try {
+          const reqHeaders = headers();
+          const ua = reqHeaders.get("user-agent") ?? "";
+          const lang = reqHeaders.get("accept-language") ?? "";
+          const enc = reqHeaders.get("accept-encoding") ?? "";
+          const ip =
+            reqHeaders.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
+          const fingerprint = fingerprintFromHeaders(ua, lang, enc);
+
+          await handleDeviceCheck(user.id, user.phone, fingerprint, ip);
+        } catch (err) {
+          // Never block login due to device-check errors
+          console.error("[auth] device check error:", err);
+        }
+
+        return user;
       },
     }),
   ],
