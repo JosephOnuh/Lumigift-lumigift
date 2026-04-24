@@ -78,6 +78,9 @@ jobs:
       STRIPE_WEBHOOK_SECRET: whsec_placeholder
       TERMII_API_KEY: placeholder
       REDIS_URL: redis://localhost:6379
+      # CRON_SECRET must be set in GitHub Actions secrets and Vercel environment variables.
+      # The /api/cron/unlock endpoint validates: Authorization: Bearer <CRON_SECRET>
+      CRON_SECRET: ci-cron-secret-placeholder
     steps:
       - uses: actions/checkout@v6
 
