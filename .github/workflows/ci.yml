@@ -112,6 +112,49 @@ jobs:
         working-directory: contracts
         run: cargo test
 
+  contract-coverage:
+    name: Soroban Contract Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov@0.6.13
+
+      - name: Run coverage
+        working-directory: contracts
+        run: |
+          cargo llvm-cov \
+            --lcov \
+            --output-path lcov.info \
+            --ignore-filename-regex '(test|fuzz)' \
+            -- --test-threads=1
+
+      - name: Check 85% threshold
+        working-directory: contracts
+        run: |
+          COVERAGE=$(cargo llvm-cov report 2>/dev/null | grep -oP 'TOTAL.*?\K[\d.]+(?=%)' | tail -1)
+          echo "Contract line coverage: ${COVERAGE}%"
+          awk -v cov="$COVERAGE" 'BEGIN { if (cov+0 < 85) { print "Coverage " cov "% is below 85% threshold"; exit 1 } }'
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: contract-coverage-lcov
+          path: contracts/lcov.info
+          retention-days: 14
+
   contract-fuzz:
     name: Soroban Contract Fuzz (proptest)
     runs-on: ubuntu-latest
@@ -133,7 +176,7 @@ jobs:
   contract-build:
     name: Build WASM Artifact
     runs-on: ubuntu-latest
-    needs: [contract-test, contract-fuzz]
+    needs: [contract-test, contract-coverage, contract-fuzz]
     outputs:
       contract-id: ${{ steps.deploy.outputs.contract-id }}
     steps:
