@@ -41,3 +41,10 @@ contracts/target/
 # Misc
 *.tsbuildinfo
 next-env.d.ts
+
+# Terraform
+infra/terraform/.terraform/
+infra/terraform/terraform.tfvars
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.backup
+infra/terraform/.terraform.lock.hcl
