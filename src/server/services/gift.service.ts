@@ -102,3 +102,12 @@ export async function cancelGift(id: string): Promise<Gift | null> {
   gifts.set(id, gift);
   return gift;
 }
+
+export async function storeClaimTxHash(id: string, txHash: string): Promise<Gift | null> {
+  const gift = gifts.get(id);
+  if (!gift) return null;
+  gift.claimTxHash = txHash;
+  gift.updatedAt = new Date();
+  gifts.set(id, gift);
+  return gift;
+}
