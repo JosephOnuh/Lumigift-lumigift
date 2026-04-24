@@ -2,6 +2,13 @@
 //!
 //! Locks USDC for a recipient until a predetermined timestamp.
 //! Only the designated recipient can claim after the unlock time.
+//!
+//! # USDC Contract Addresses
+//!
+//! - **Mainnet:** `CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75`
+//!   (Circle USDC on Stellar mainnet)
+//! - **Testnet:** `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA`
+//!   (Circle USDC on Stellar testnet)
 
 #![no_std]
 
@@ -61,6 +68,11 @@ impl EscrowContract {
 
         if amount < MIN_AMOUNT {
             return Err(EscrowError::InvalidAmount);
+        }
+
+        // Reject any token that is not the expected USDC contract
+        if token != expected_usdc {
+            panic!("token must be the USDC contract");
         }
 
         sender.require_auth();
@@ -404,5 +416,28 @@ mod fuzz {
                 prop_assert_eq!(token.balance(&recipient), amount);
             }
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "token must be the USDC contract")]
+    fn test_initialize_rejects_non_usdc_token() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let sender = Address::generate(&env);
+        let recipient = Address::generate(&env);
+
+        // Create two distinct token contracts: one "USDC", one fake
+        let (usdc_id, _, usdc_admin) = create_token(&env, &sender);
+        let (fake_id, _, fake_admin) = create_token(&env, &sender);
+
+        usdc_admin.mint(&sender, &100_000_000);
+        fake_admin.mint(&sender, &100_000_000);
+
+        let contract_id = env.register_contract(None, EscrowContract);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        // Pass fake token but declare usdc_id as the expected USDC — should panic
+        client.initialize(&sender, &recipient, &fake_id, &100_000_000, &1_000, &usdc_id);
     }
 }
