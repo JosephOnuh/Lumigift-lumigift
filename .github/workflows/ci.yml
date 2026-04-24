@@ -99,6 +99,36 @@ jobs:
       - name: Build
         run: npm run build
 
+  license-check:
+    name: License Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci --legacy-peer-deps
+
+      - name: npm license check
+        run: npm run license:check
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts
+
+      - name: cargo license check
+        working-directory: contracts
+        run: |
+          cargo install --locked cargo-license
+          cargo license --deny-licenses GPL-2.0 GPL-3.0 AGPL-3.0 LGPL-2.0 LGPL-2.1 LGPL-3.0
+
   contract-test:
     name: Soroban Contract Tests
     runs-on: ubuntu-latest
