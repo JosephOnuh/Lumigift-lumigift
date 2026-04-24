@@ -10,6 +10,7 @@ Thank you for your interest in contributing! Lumigift is an open-source project 
 - [Project Structure](#project-structure)
 - [Commit Convention](#commit-convention)
 - [Pull Request Process](#pull-request-process)
+- [Branch Protection Rules](#branch-protection-rules)
 - [Smart Contract Contributions](#smart-contract-contributions)
 - [Reporting Bugs](#reporting-bugs)
 
@@ -116,6 +117,43 @@ Examples:
 4. Open a PR against `develop` (not `main`)
 5. Fill in the PR template
 6. Request a review — PRs require at least one approval
+
+---
+
+## Branch Protection Rules
+
+Both `main` and `develop` are protected branches. The rules below are enforced via GitHub repository settings and cannot be bypassed by any contributor, including maintainers.
+
+### `main`
+
+| Rule | Setting |
+|------|---------|
+| Required approving reviews | 1 |
+| Dismiss stale reviews on new push | ✅ |
+| Require status checks to pass | `lint-and-type-check`, `test`, `build`, `contract-test`, `contract-build` |
+| Require branches to be up to date | ✅ |
+| Direct pushes | ❌ Disabled |
+| Force pushes | ❌ Disabled |
+| Branch deletion | ❌ Disabled |
+
+### `develop`
+
+| Rule | Setting |
+|------|---------|
+| Required approving reviews | — |
+| Require status checks to pass | `lint-and-type-check`, `test`, `build`, `contract-test`, `contract-build` |
+| Require branches to be up to date | ✅ |
+| Direct pushes | ❌ Disabled |
+| Force pushes | ❌ Disabled |
+| Branch deletion | ✅ Allowed |
+
+### Why these rules?
+
+- **No direct pushes** — all changes must go through a PR so CI runs and history stays clean.
+- **Required CI checks** — a PR cannot be merged until every workflow job in `ci.yml` passes.
+- **1 approval on `main`** — production code gets a second pair of eyes before it ships.
+- **Force-push disabled** — prevents rewriting shared history and breaking other contributors' local branches.
+- **Deletion disabled on `main`** — the production branch cannot be accidentally removed.
 
 ---
 
