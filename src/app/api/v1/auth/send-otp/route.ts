@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendOtp } from "@/lib/sms";
+import { storeOtp } from "@/lib/otp";
 import { withErrorHandler } from "@/server/middleware";
 import { getRedisClient } from "@/lib/redis";
 import { normalizePhone } from "@/lib/phone";
@@ -53,6 +54,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   }
 
   const otp = await sendOtp(phone);
+  await storeOtp(phone, otp);
 
   if (process.env.NODE_ENV === "development") {
     console.warn(`[DEV] OTP for ${phone}: ${otp}`);
