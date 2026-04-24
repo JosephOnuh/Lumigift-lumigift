@@ -66,11 +66,15 @@ export const authOptions: NextAuthOptions = {
         const parsed = verifyOtpSchema.safeParse(credentials);
         if (!parsed.success) return null;
 
+        // parsed.data.phone is already E.164 (normalized by the Zod schema)
+        const phone = normalizePhone(parsed.data.phone);
+        if (!phone) return null;
+
         // TODO: verify OTP from Redis/DB and load user record
         // Placeholder — replace with real verification
         const user = {
           id: "placeholder-user-id",
-          phone: parsed.data.phone,
+          phone,
           name: "Lumigift User",
         };
 
