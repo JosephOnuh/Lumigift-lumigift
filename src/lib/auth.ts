@@ -1,6 +1,7 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { verifyOtpSchema } from "@/types/schemas";
+import { normalizePhone } from "@/lib/phone";
 
 // In production, replace with real DB lookups and OTP verification.
 export const authOptions: NextAuthOptions = {
@@ -20,11 +21,15 @@ export const authOptions: NextAuthOptions = {
         const parsed = verifyOtpSchema.safeParse(credentials);
         if (!parsed.success) return null;
 
+        // parsed.data.phone is already E.164 (normalized by the Zod schema)
+        const phone = normalizePhone(parsed.data.phone);
+        if (!phone) return null;
+
         // TODO: verify OTP from Redis/DB and load user record
         // Placeholder — replace with real verification
         return {
           id: "placeholder-user-id",
-          phone: parsed.data.phone,
+          phone,
           name: "Lumigift User",
         };
       },

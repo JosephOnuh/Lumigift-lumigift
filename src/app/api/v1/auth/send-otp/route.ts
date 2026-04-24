@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { sendOtp } from "@/lib/sms";
 import { withErrorHandler } from "@/server/middleware";
 import { getRedisClient } from "@/lib/redis";
+import { normalizePhone } from "@/lib/phone";
 import type { ApiResponse } from "@/types";
+
+// Uniform success message — never reveal whether the number is registered.
+const OTP_RESPONSE = { message: "If this number is registered, an OTP has been sent." };
 
 async function checkRateLimit(
   key: string,
@@ -17,9 +21,10 @@ async function checkRateLimit(
 }
 
 export const POST = withErrorHandler(async (req: NextRequest) => {
-  const { phone } = await req.json();
+  const body = await req.json();
+  const phone = normalizePhone(String(body?.phone ?? ""));
 
-  if (!phone || !/^\+?[1-9]\d{9,14}$/.test(phone)) {
+  if (!phone) {
     return NextResponse.json<ApiResponse<never>>(
       { success: false, error: "Invalid phone number" },
       { status: 400 }
@@ -34,10 +39,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   if (!phoneCheck.allowed) {
     return NextResponse.json<ApiResponse<never>>(
       { success: false, error: "Too many OTP requests for this number." },
-      {
-        status: 429,
-        headers: { "Retry-After": String(phoneCheck.retryAfter) },
-      }
+      { status: 429, headers: { "Retry-After": String(phoneCheck.retryAfter) } }
     );
   }
 
@@ -46,10 +48,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   if (!ipCheck.allowed) {
     return NextResponse.json<ApiResponse<never>>(
       { success: false, error: "Too many OTP requests from this IP." },
-      {
-        status: 429,
-        headers: { "Retry-After": String(ipCheck.retryAfter) },
-      }
+      { status: 429, headers: { "Retry-After": String(ipCheck.retryAfter) } }
     );
   }
 
@@ -59,8 +58,9 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     console.warn(`[DEV] OTP for ${phone}: ${otp}`);
   }
 
+  // Always return the same body regardless of whether the number is registered.
   return NextResponse.json<ApiResponse<{ message: string }>>({
     success: true,
-    data: { message: "OTP sent successfully" },
+    data: OTP_RESPONSE,
   });
 });
