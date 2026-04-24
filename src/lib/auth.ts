@@ -7,6 +7,8 @@ import pool from "@/lib/db";
 import { sendNewDeviceAlert } from "@/lib/sms";
 import { getCountryFromIp } from "@/lib/device";
 import { createHash } from "crypto";
+import { normalizePhone } from "@/lib/phone";
+import { verifyOtp } from "@/lib/otp";
 
 function fingerprintFromHeaders(ua: string, lang: string, enc: string): string {
   return createHash("sha256").update(`${ua}|${lang}|${enc}`).digest("hex");
@@ -70,13 +72,18 @@ export const authOptions: NextAuthOptions = {
         const phone = normalizePhone(parsed.data.phone);
         if (!phone) return null;
 
-        // TODO: verify OTP from Redis/DB and load user record
-        // Placeholder — replace with real verification
-        const user = {
-          id: "placeholder-user-id",
-          phone,
-          name: "Lumigift User",
-        };
+        const result = await verifyOtp(phone, parsed.data.otp);
+        if (!result.success) {
+          // Throw so NextAuth surfaces the message; locked === true means HTTP 429 semantics.
+          throw new Error(result.message);
+        }
+
+        const { rows } = await pool.query<{ id: string; phone: string; name: string }>(
+          "SELECT id, phone, name FROM users WHERE phone = $1",
+          [phone]
+        );
+        if (rows.length === 0) return null;
+        const user = rows[0];
 
         // Device fingerprint check
         try {
