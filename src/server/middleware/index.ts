@@ -19,17 +19,23 @@ export function withAuth(handler: Handler): Handler {
   };
 }
 
+const API_VERSION = "v1";
+
 /** Wraps a route handler with a try/catch — returns 500 on unhandled errors. */
 export function withErrorHandler(handler: Handler): Handler {
   return async (req, context) => {
     try {
-      return await handler(req, context);
+      const res = await handler(req, context);
+      res.headers.set("X-API-Version", API_VERSION);
+      return res;
     } catch (err) {
       console.error("[API Error]", err);
-      return NextResponse.json<ApiError>(
+      const res = NextResponse.json<ApiError>(
         { success: false, error: "Internal server error", code: "INTERNAL_ERROR" },
         { status: 500 }
       );
+      res.headers.set("X-API-Version", API_VERSION);
+      return res;
     }
   };
 }
