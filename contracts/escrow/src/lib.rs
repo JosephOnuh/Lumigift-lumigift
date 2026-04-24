@@ -1,7 +1,14 @@
-//! Zendvo Escrow Contract
+//! Lumigift Escrow Contract
 //!
 //! Locks USDC for a recipient until a predetermined timestamp.
 //! Only the designated recipient can claim after the unlock time.
+//!
+//! # USDC Contract Addresses
+//!
+//! - **Mainnet:** `CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75`
+//!   (Circle USDC on Stellar mainnet)
+//! - **Testnet:** `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA`
+//!   (Circle USDC on Stellar testnet)
 
 #![no_std]
 
@@ -30,11 +37,12 @@ pub struct EscrowContract;
 impl EscrowContract {
     /// Initialize the escrow. Called once by the platform after deploying.
     ///
-    /// * `sender`      – address that funded the escrow
-    /// * `recipient`   – address that may claim after `unlock_time`
-    /// * `token`       – USDC token contract address
-    /// * `amount`      – amount in stroops (7 decimal places)
-    /// * `unlock_time` – Unix timestamp (seconds) after which claim is allowed
+    /// * `sender`        – address that funded the escrow
+    /// * `recipient`     – address that may claim after `unlock_time`
+    /// * `token`         – USDC token contract address (must match `expected_usdc`)
+    /// * `amount`        – amount in stroops (7 decimal places)
+    /// * `unlock_time`   – Unix timestamp (seconds) after which claim is allowed
+    /// * `expected_usdc` – the canonical USDC contract address for this network
     pub fn initialize(
         env: Env,
         sender: Address,
@@ -42,10 +50,16 @@ impl EscrowContract {
         token: Address,
         amount: i128,
         unlock_time: u64,
+        expected_usdc: Address,
     ) {
         // Prevent re-initialization
         if env.storage().instance().has(&DataKey::Sender) {
             panic!("already initialized");
+        }
+
+        // Reject any token that is not the expected USDC contract
+        if token != expected_usdc {
+            panic!("token must be the USDC contract");
         }
 
         sender.require_auth();
@@ -182,7 +196,7 @@ mod tests {
         let client = EscrowContractClient::new(&env, &contract_id);
 
         let unlock_time: u64 = 1_000;
-        client.initialize(&sender, &recipient, &token_id, &100_000_000, &unlock_time);
+        client.initialize(&sender, &recipient, &token_id, &100_000_000, &unlock_time, &token_id);
 
         // Advance ledger past unlock time
         env.ledger().with_mut(|l| l.timestamp = 1_001);
@@ -206,7 +220,30 @@ mod tests {
         let contract_id = env.register_contract(None, EscrowContract);
         let client = EscrowContractClient::new(&env, &contract_id);
 
-        client.initialize(&sender, &recipient, &token_id, &100_000_000, &9_999_999);
+        client.initialize(&sender, &recipient, &token_id, &100_000_000, &9_999_999, &token_id);
         client.claim(); // should panic
+    }
+
+    #[test]
+    #[should_panic(expected = "token must be the USDC contract")]
+    fn test_initialize_rejects_non_usdc_token() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let sender = Address::generate(&env);
+        let recipient = Address::generate(&env);
+
+        // Create two distinct token contracts: one "USDC", one fake
+        let (usdc_id, _, usdc_admin) = create_token(&env, &sender);
+        let (fake_id, _, fake_admin) = create_token(&env, &sender);
+
+        usdc_admin.mint(&sender, &100_000_000);
+        fake_admin.mint(&sender, &100_000_000);
+
+        let contract_id = env.register_contract(None, EscrowContract);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        // Pass fake token but declare usdc_id as the expected USDC — should panic
+        client.initialize(&sender, &recipient, &fake_id, &100_000_000, &1_000, &usdc_id);
     }
 }
