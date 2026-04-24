@@ -11,6 +11,7 @@ const nextConfig = {
   },
   experimental: {
     serverComponentsExternalPackages: ["@stellar/stellar-sdk"],
+    instrumentationHook: true,
   },
 };
 

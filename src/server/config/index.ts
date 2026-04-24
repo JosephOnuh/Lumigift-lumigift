@@ -43,6 +43,10 @@ export const serverConfig = {
   },
   database: {
     url: process.env.DATABASE_URL ?? "",
+    poolMin: parseInt(process.env.DB_POOL_MIN ?? "2", 10),
+    poolMax: parseInt(process.env.DB_POOL_MAX ?? "10", 10),
+    idleTimeoutMs: parseInt(process.env.DB_IDLE_TIMEOUT_MS ?? "10000", 10),
+    connectionTimeoutMs: parseInt(process.env.DB_CONNECTION_TIMEOUT_MS ?? "5000", 10),
   },
 } as const;
 
