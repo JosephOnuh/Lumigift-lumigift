@@ -34,6 +34,7 @@
     "contract:test": "cd contracts && cargo test",
     "contract:deploy": "ts-node scripts/deploy-contract.ts",
     "license:check": "license-checker --production --failOn 'GPL;AGPL;LGPL;GPL-2.0;GPL-3.0;AGPL-3.0;LGPL-2.0;LGPL-2.1;LGPL-3.0' --excludePrivatePackages",
+    "e2e": "playwright test",
     "prepare": "husky"
   },
   "dependencies": {
@@ -54,6 +55,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/test": "1.59.1",
     "@testing-library/jest-dom": "^6.4.6",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^20.14.9",
