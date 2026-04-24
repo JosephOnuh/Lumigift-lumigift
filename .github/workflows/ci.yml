@@ -225,7 +225,7 @@ jobs:
   contract-build:
     name: Build WASM Artifact
     runs-on: ubuntu-latest
-    needs: [contract-test, contract-fuzz]
+    needs: [contract-test, contract-coverage, contract-fuzz]
     outputs:
       contract-id: ${{ steps.deploy.outputs.contract-id }}
     steps:

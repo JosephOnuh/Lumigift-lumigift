@@ -1,5 +1,7 @@
 # Lumigift Escrow Contract
 
+[![Contract Coverage](https://img.shields.io/badge/coverage-≥85%25-brightgreen)](../../.github/workflows/ci.yml)
+
 Soroban smart contract that time-locks USDC for a recipient until a predetermined timestamp.
 
 ## Error Codes
