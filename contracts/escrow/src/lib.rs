@@ -318,3 +318,91 @@ mod tests {
         assert_eq!(err, EscrowError::InvalidAmount);
     }
 }
+
+// ─── Proptest fuzz tests ──────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod fuzz {
+    use super::*;
+    use proptest::prelude::*;
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger},
+        token::{Client as TokenClient, StellarAssetClient},
+        Env,
+    };
+
+    proptest! {
+        /// Any amount below MIN_AMOUNT must be rejected; any amount >= MIN_AMOUNT
+        /// must be accepted (contract stores it and token balance moves).
+        #[test]
+        fn fuzz_initialize_amount(amount in i128::MIN..=i128::MAX, unlock_time in 0u64..=u64::MAX) {
+            let env = Env::default();
+            env.mock_all_auths();
+
+            let sender = Address::generate(&env);
+            let recipient = Address::generate(&env);
+            let token_id = env.register_stellar_asset_contract(sender.clone());
+            let token_admin = StellarAssetClient::new(&env, &token_id);
+
+            if amount >= MIN_AMOUNT {
+                token_admin.mint(&sender, &amount);
+            }
+
+            let contract_id = env.register_contract(None, EscrowContract);
+            let client = EscrowContractClient::new(&env, &contract_id);
+
+            let result = client.try_initialize(&sender, &recipient, &token_id, &amount, &unlock_time);
+
+            if amount < MIN_AMOUNT {
+                prop_assert_eq!(
+                    result.unwrap_err().unwrap(),
+                    EscrowError::InvalidAmount,
+                    "expected InvalidAmount for amount={amount}"
+                );
+            } else {
+                prop_assert!(result.is_ok(), "expected Ok for amount={amount}, got {result:?}");
+            }
+        }
+
+        /// Claim before unlock_time → StillLocked.
+        /// Claim at or after unlock_time → Ok (funds transferred).
+        #[test]
+        fn fuzz_claim_timestamp(
+            unlock_time in 1u64..=u64::MAX / 2,
+            ledger_offset in 0u64..=u64::MAX / 2,
+        ) {
+            let env = Env::default();
+            env.mock_all_auths();
+
+            let sender    = Address::generate(&env);
+            let recipient = Address::generate(&env);
+            let token_id  = env.register_stellar_asset_contract(sender.clone());
+            let token     = TokenClient::new(&env, &token_id);
+            let token_admin = StellarAssetClient::new(&env, &token_id);
+
+            let amount = MIN_AMOUNT;
+            token_admin.mint(&sender, &amount);
+
+            let contract_id = env.register_contract(None, EscrowContract);
+            let client = EscrowContractClient::new(&env, &contract_id);
+
+            client.initialize(&sender, &recipient, &token_id, &amount, &unlock_time);
+
+            let ledger_ts = unlock_time.saturating_sub(1).saturating_add(ledger_offset);
+            env.ledger().with_mut(|l| l.timestamp = ledger_ts);
+
+            let result = client.try_claim();
+
+            if ledger_ts < unlock_time {
+                prop_assert_eq!(
+                    result.unwrap_err().unwrap(),
+                    EscrowError::StillLocked,
+                    "expected StillLocked at ts={ledger_ts} unlock={unlock_time}"
+                );
+            } else {
+                prop_assert!(result.is_ok(), "expected Ok at ts={ledger_ts} unlock={unlock_time}, got {result:?}");
+                prop_assert_eq!(token.balance(&recipient), amount);
+            }
+        }
+    }
+}
