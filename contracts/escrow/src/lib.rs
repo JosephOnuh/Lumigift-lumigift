@@ -21,7 +21,11 @@ pub enum EscrowError {
     NotInitialized     = 4,
     Unauthorized       = 5,
     AlreadyCancelled   = 6,
+    InvalidAmount      = 7,
 }
+
+/// Minimum escrow amount: 1 USDC expressed in stroops (7 decimal places).
+const MIN_AMOUNT: i128 = 10_000_000;
 
 // ─── Storage keys ─────────────────────────────────────────────────────────────
 
@@ -53,6 +57,10 @@ impl EscrowContract {
     ) -> Result<(), EscrowError> {
         if env.storage().instance().has(&DataKey::Sender) {
             return Err(EscrowError::AlreadyInitialized);
+        }
+
+        if amount < MIN_AMOUNT {
+            return Err(EscrowError::InvalidAmount);
         }
 
         sender.require_auth();
@@ -268,5 +276,45 @@ mod tests {
 
         let err = client.try_get_state().unwrap_err().unwrap();
         assert_eq!(err, EscrowError::NotInitialized);
+    }
+
+    #[test]
+    fn test_initialize_zero_amount_returns_invalid_amount() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let sender = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let (token_id, _, _) = create_token(&env, &sender);
+
+        let contract_id = env.register_contract(None, EscrowContract);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        let err = client
+            .try_initialize(&sender, &recipient, &token_id, &0, &1_000)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, EscrowError::InvalidAmount);
+    }
+
+    #[test]
+    fn test_initialize_below_minimum_amount_returns_invalid_amount() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let sender = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let (token_id, _, token_admin) = create_token(&env, &sender);
+        token_admin.mint(&sender, &9_999_999);
+
+        let contract_id = env.register_contract(None, EscrowContract);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        // 9_999_999 stroops = just under 1 USDC minimum
+        let err = client
+            .try_initialize(&sender, &recipient, &token_id, &9_999_999, &1_000)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, EscrowError::InvalidAmount);
     }
 }
