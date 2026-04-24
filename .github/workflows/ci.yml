@@ -53,7 +53,9 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
+          fail_ci_if_error: true
+          threshold: 70
+          comment: true
 
   build:
     name: Next.js Build

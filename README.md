@@ -4,6 +4,7 @@
 > Send money that stays completely hidden until a surprise unlock date.
 
 [![CI](https://github.com/JosephOnuh/Lumigift-lumigift/actions/workflows/ci.yml/badge.svg)](https://github.com/JosephOnuh/Lumigift-lumigift/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/JosephOnuh/Lumigift-lumigift/graph/badge.svg?token=CODECOV_TOKEN)](https://codecov.io/gh/JosephOnuh/Lumigift-lumigift)
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 [![Built on Stellar](https://img.shields.io/badge/Built%20on-Stellar-blue)](https://stellar.org)
 [![Soroban](https://img.shields.io/badge/Smart%20Contracts-Soroban-blueviolet)](https://developers.stellar.org/docs/build/smart-contracts)
