@@ -14,6 +14,7 @@ export interface User {
 export type GiftStatus =
   | "draft"
   | "pending_payment"
+  | "funded"
   | "locked"
   | "unlocked"
   | "claimed"
@@ -53,7 +54,13 @@ export interface Payment {
 }
 
 // ─── Notification ─────────────────────────────────────────────────────────────
-export type NotificationType = "gift_received" | "gift_unlocked" | "gift_claimed" | "otp";
+export type NotificationType =
+  | "gift_received"
+  | "gift_unlocked"
+  | "gift_claimed"
+  | "otp"
+  | "new_device_login"
+  | "suspicious_login_reported";
 
 export interface Notification {
   id: string;

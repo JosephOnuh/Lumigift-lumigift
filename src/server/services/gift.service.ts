@@ -3,13 +3,14 @@ import type { Gift, GiftStatus } from "@/types";
 import type { CreateGiftInput } from "@/types/schemas";
 import { initializePayment, ngnToKobo } from "@/lib/paystack";
 import { serverConfig } from "@/server/config";
+import { assertValidTransition } from "./gift-state-machine";
 
 // ─── Exchange rate helper ─────────────────────────────────────────────────────
-// In production, fetch from a live FX provider (e.g. Stellar DEX or Coingecko).
-const NGN_PER_USDC = 1600;
+import { getExchangeRate } from "@/server/services/exchange-rate.service";
 
-export function ngnToUsdc(ngn: number): string {
-  return (ngn / NGN_PER_USDC).toFixed(7);
+export async function ngnToUsdc(ngn: number): Promise<string> {
+  const { ngnPerUsdc } = await getExchangeRate();
+  return (ngn / ngnPerUsdc).toFixed(7);
 }
 
 // ─── In-memory store (replace with DB in production) ─────────────────────────
@@ -20,7 +21,7 @@ export async function createGift(
   input: CreateGiftInput
 ): Promise<{ gift: Gift; paymentUrl: string }> {
   const id = randomUUID();
-  const amountUsdc = ngnToUsdc(input.amountNgn);
+  const amountUsdc = await ngnToUsdc(input.amountNgn);
 
   const gift: Gift = {
     id,
@@ -56,6 +57,7 @@ export async function getGiftById(id: string): Promise<Gift | null> {
 export async function updateGiftStatus(id: string, status: GiftStatus): Promise<Gift | null> {
   const gift = gifts.get(id);
   if (!gift) return null;
+  assertValidTransition(gift.status, status);
   gift.status = status;
   gift.updatedAt = new Date();
   gifts.set(id, gift);
@@ -66,6 +68,37 @@ export async function getGiftsBySender(senderId: string): Promise<Gift[]> {
   return [...gifts.values()].filter((g) => g.senderId === senderId);
 }
 
+export interface GiftPage {
+  gifts: Gift[];
+  total: number;
+  nextCursor: string | null;
+}
+
+export async function getGiftsBySenderPaginated(
+  senderId: string,
+  cursor: string | null,
+  limit: number
+): Promise<GiftPage> {
+  const all = [...gifts.values()]
+    .filter((g) => g.senderId === senderId)
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+  const startIndex = cursor ? all.findIndex((g) => g.id === cursor) + 1 : 0;
+  const page = all.slice(startIndex, startIndex + limit);
+  const nextCursor = startIndex + limit < all.length ? page[page.length - 1].id : null;
+
+  return { gifts: page, total: all.length, nextCursor };
+}
+
 export async function getGiftsByRecipient(phone: string): Promise<Gift[]> {
   return [...gifts.values()].filter((g) => g.recipientPhone === phone);
+}
+
+export async function cancelGift(id: string): Promise<Gift | null> {
+  const gift = gifts.get(id);
+  if (!gift) return null;
+  gift.status = "cancelled";
+  gift.updatedAt = new Date();
+  gifts.set(id, gift);
+  return gift;
 }
