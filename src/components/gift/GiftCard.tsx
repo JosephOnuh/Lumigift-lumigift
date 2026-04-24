@@ -1,14 +1,18 @@
 "use client";
 
+import { useState } from "react";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
-import type { Gift } from "@/types";
+import type { Gift, GiftStatus } from "@/types";
 import { GiftStatusBadge } from "@/components/ui/GiftStatusBadge";
+import { ClaimButton } from "./ClaimButton";
 import styles from "./GiftCard.module.css";
 
 interface GiftCardProps {
   gift: Gift;
   perspective: "sender" | "recipient";
+  /** Recipient's Stellar public key — required when perspective="recipient" to enable claiming */
+  recipientStellarKey?: string;
 }
 
 const EXPLORER_BASE = "https://stellar.expert/explorer/testnet/tx";
@@ -17,9 +21,10 @@ function explorerUrl(txHash: string) {
   return `${EXPLORER_BASE}/${txHash}`;
 }
 
-export function GiftCard({ gift, perspective }: GiftCardProps) {
+export function GiftCard({ gift, perspective, recipientStellarKey }: GiftCardProps) {
   const router = useRouter();
-  const isLocked = gift.status === "locked";
+  const [status, setStatus] = useState<GiftStatus>(gift.status);
+  const isLocked = status === "locked";
   const name =
     perspective === "sender" ? `To: ${gift.recipientName}` : "A gift for you";
 
@@ -37,7 +42,7 @@ export function GiftCard({ gift, perspective }: GiftCardProps) {
     name,
     amountLabel,
     unlockLabel,
-    gift.status,
+    status,
   ].join(", ");
 
   const handleActivate = () => {
@@ -62,7 +67,7 @@ export function GiftCard({ gift, perspective }: GiftCardProps) {
     >
       <div className={styles.header}>
         <span className={styles.name}>{name}</span>
-        <GiftStatusBadge status={gift.status} />
+        <GiftStatusBadge status={status} />
       </div>
 
       <div className={styles.amount} aria-hidden="true">
@@ -104,6 +109,16 @@ export function GiftCard({ gift, perspective }: GiftCardProps) {
           >
             {gift.claimTxHash.slice(0, 8)}…
           </a>
+        </div>
+      )}
+
+      {perspective === "recipient" && status === "unlocked" && recipientStellarKey && (
+        <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          <ClaimButton
+            giftId={gift.id}
+            recipientStellarKey={recipientStellarKey}
+            onStatusChange={setStatus}
+          />
         </div>
       )}
     </article>
