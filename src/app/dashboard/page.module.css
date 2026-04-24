@@ -24,3 +24,15 @@
   color: var(--color-text-secondary);
   text-align: center;
 }
+
+.count {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-4);
+}
+
+.loadMore {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-8);
+}

@@ -68,6 +68,28 @@ export async function getGiftsBySender(senderId: string): Promise<Gift[]> {
   return [...gifts.values()].filter((g) => g.senderId === senderId);
 }
 
+export interface GiftPage {
+  gifts: Gift[];
+  total: number;
+  nextCursor: string | null;
+}
+
+export async function getGiftsBySenderPaginated(
+  senderId: string,
+  cursor: string | null,
+  limit: number
+): Promise<GiftPage> {
+  const all = [...gifts.values()]
+    .filter((g) => g.senderId === senderId)
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+  const startIndex = cursor ? all.findIndex((g) => g.id === cursor) + 1 : 0;
+  const page = all.slice(startIndex, startIndex + limit);
+  const nextCursor = startIndex + limit < all.length ? page[page.length - 1].id : null;
+
+  return { gifts: page, total: all.length, nextCursor };
+}
+
 export async function getGiftsByRecipient(phone: string): Promise<Gift[]> {
   return [...gifts.values()].filter((g) => g.recipientPhone === phone);
 }
