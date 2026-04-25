@@ -22,6 +22,18 @@ Lumigift processes payments via Paystack (NGN) and Stripe (international cards).
 
 Lumigift is not liable for losses arising from incorrect recipient phone numbers, unclaimed gifts, or network outages on the Stellar blockchain.
 
-## 4. Contact
+## 4. Privacy & Data Handling
+
+### Recipient Phone Numbers
+
+Lumigift does **not** store recipient phone numbers in plaintext. When a gift is created:
+
+1. The recipient's phone number is **hashed with SHA-256** before being written to the database.
+2. The plaintext number is used **transiently** — only to send the SMS delivery notification — and is never persisted.
+3. Lookups (e.g. "gifts for this recipient") are performed against the stored hash.
+
+This means Lumigift cannot reconstruct a recipient's phone number from its database records. If you need to update a recipient's contact details, a new gift must be created.
+
+## 5. Contact
 
 For support, email **support@lumigift.com**.
