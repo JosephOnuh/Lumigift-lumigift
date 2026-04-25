@@ -6,7 +6,17 @@ const termiiClient = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-/** Send a new-device login alert with a suspicious-login report link. */
+/**
+ * Sends a new-device login alert to the user via SMS.
+ * Called when a login is detected from an unrecognised device fingerprint.
+ *
+ * @param phone - E.164-formatted destination phone number.
+ * @param options.time - Human-readable timestamp of the login event (UTC string).
+ * @param options.country - Country name resolved from the login IP address.
+ * @param options.reportUrl - URL the user can visit to report a suspicious login.
+ * @returns Resolves when the SMS has been dispatched to Termii.
+ * @throws If the Termii API returns a non-2xx response.
+ */
 export async function sendNewDeviceAlert(
   phone: string,
   { time, country, reportUrl }: { time: string; country: string; reportUrl: string }
@@ -24,7 +34,14 @@ export async function sendNewDeviceAlert(
   });
 }
 
-/** Send a 6-digit OTP via SMS. */
+/**
+ * Generates a 6-digit OTP, sends it to the given phone number via SMS,
+ * and returns the generated OTP so the caller can persist it.
+ *
+ * @param phone - E.164-formatted destination phone number.
+ * @returns The 6-digit OTP string that was sent.
+ * @throws If the Termii API returns a non-2xx response.
+ */
 export async function sendOtp(phone: string): Promise<string> {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
 

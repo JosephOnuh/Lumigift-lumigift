@@ -17,7 +17,10 @@ pool.on("error", (err) => {
   console.error("[db] Unexpected pool error:", err.message);
 });
 
-/** Log pool metrics on startup. */
+/**
+ * Logs the current connection pool configuration to stdout.
+ * Useful for verifying pool settings on application startup.
+ */
 export function logPoolMetrics() {
   console.log(
     `[db] Pool ready — min: ${serverConfig.database.poolMin}, max: ${serverConfig.database.poolMax}, ` +
@@ -25,7 +28,12 @@ export function logPoolMetrics() {
   );
 }
 
-/** Gracefully drain and close all pool connections. */
+/**
+ * Gracefully drains and closes all connections in the pool.
+ * Should be called during application shutdown to avoid connection leaks.
+ *
+ * @returns Resolves when all connections have been closed.
+ */
 export async function closePool() {
   await pool.end();
   console.log("[db] Pool closed.");
