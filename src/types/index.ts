@@ -24,7 +24,8 @@ export type GiftStatus =
 export interface Gift {
   id: string;
   senderId: string;
-  recipientPhone: string;
+  /** SHA-256 hex digest of the E.164 recipient phone number. Plaintext is never persisted. */
+  recipientPhoneHash: string;
   recipientName: string;
   amountNgn: number;
   amountUsdc: string; // on-chain amount as string to preserve precision
