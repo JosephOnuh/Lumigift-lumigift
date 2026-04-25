@@ -6,7 +6,12 @@
  *   - 08012345678     (local with leading 0)
  *   - 8012345678      (local without leading 0)
  *
- * Returns null if the number cannot be normalized to a valid E.164 string.
+ * Non-Nigerian numbers that already start with `+` and have 10–15 digits are
+ * passed through unchanged.
+ *
+ * @param raw - The raw phone number string in any supported format.
+ * @returns The E.164-formatted phone number (e.g. `"+2348012345678"`),
+ *   or `null` if the input cannot be normalized to a valid E.164 string.
  */
 export function normalizePhone(raw: string): string | null {
   const digits = raw.replace(/\D/g, "");

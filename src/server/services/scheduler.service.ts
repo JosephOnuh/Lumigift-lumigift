@@ -1,8 +1,12 @@
 /**
- * Unlock scheduler — checks for gifts whose unlockAt has passed and
- * transitions them from "locked" → "unlocked", then notifies recipients.
+ * Unlock scheduler — checks for gifts whose `unlockAt` has passed and
+ * transitions them from `"locked"` → `"unlocked"`, then notifies recipients.
+ *
+ * In production this should be triggered by a Vercel Cron job or pg_cron
+ * at a regular interval (e.g. every minute).
+ *
+ * @returns The number of gifts that were unlocked in this run.
  */
-
 // Placeholder: in production, query DB for all locked gifts past their unlockAt.
 export async function processUnlocks(): Promise<number> {
   const now = new Date();
@@ -12,10 +16,15 @@ export async function processUnlocks(): Promise<number> {
 }
 
 /**
- * Expiry scheduler — identifies gifts that have been unlocked but unclaimed
- * for more than 365 days, marks them as "expired", and notifies the sender.
+ * Expiry scheduler — identifies gifts that have been `"unlocked"` but unclaimed
+ * for more than 365 days, marks them as `"expired"`, and notifies the sender.
+ *
+ * When a gift expires the escrowed USDC should be refunded to the sender's
+ * Stellar address via the escrow contract's cancel/refund path.
  *
  * In production, run daily via Vercel Cron or pg_cron.
+ *
+ * @returns Resolves when all expired gifts have been processed.
  */
 export async function processExpiries(): Promise<void> {
   const now = new Date();
