@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { Gift, GiftStatus } from "@/types";
 import { GiftStatusBadge } from "@/components/ui/GiftStatusBadge";
 import { ClaimButton } from "./ClaimButton";
+import { ShareGift } from "./ShareGift";
 import styles from "./GiftCard.module.css";
 
 interface GiftCardProps {
@@ -119,6 +120,12 @@ export function GiftCard({ gift, perspective, recipientStellarKey }: GiftCardPro
             recipientStellarKey={recipientStellarKey}
             onStatusChange={setStatus}
           />
+        </div>
+      )}
+
+      {perspective === "sender" && (status === "locked" || status === "funded") && (
+        <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          <ShareGift giftId={gift.id} recipientName={gift.recipientName} />
         </div>
       )}
     </article>
