@@ -188,3 +188,43 @@ export async function storeClaimTxHash(id: string, txHash: string): Promise<Gift
   gifts.set(id, gift);
   return gift;
 }
+
+/**
+ * Retrieves a gift by its on-chain Soroban contract ID.
+ *
+ * @param contractId - The deployed escrow contract address (C…).
+ * @returns The matching {@link Gift}, or `null` if not found.
+ */
+export async function getGiftByContractId(contractId: string): Promise<Gift | null> {
+  for (const gift of gifts.values()) {
+    if (gift.contractId === contractId) return gift;
+  }
+  return null;
+}
+
+/**
+ * Updates a gift's status only if the transition is valid.
+ * Unlike {@link updateGiftStatus}, this is idempotent: if the gift is already
+ * in `status` the call is a no-op rather than throwing.
+ *
+ * @param id - The gift UUID.
+ * @param status - The target {@link GiftStatus}.
+ * @returns The updated {@link Gift}, or `null` if the gift does not exist.
+ */
+export async function updateGiftStatusIdempotent(
+  id: string,
+  status: GiftStatus
+): Promise<Gift | null> {
+  const gift = gifts.get(id);
+  if (!gift) return null;
+  if (gift.status === status) return gift; // already in target state — no-op
+  try {
+    return await updateGiftStatus(id, status);
+  } catch {
+    // Transition not allowed from current state — log and skip
+    console.warn(
+      `[gift.service] idempotent update skipped: "${gift.status}" → "${status}" for gift ${id}`
+    );
+    return gift;
+  }
+}
