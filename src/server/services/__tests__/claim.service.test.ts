@@ -39,7 +39,7 @@ function makeGift(overrides: Partial<Gift> = {}): Gift {
   return {
     id: "gift-abc-123",
     senderId: "sender-1",
-    recipientPhone: "+2348011111111",
+    recipientPhoneHash: "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8",
     recipientName: "Ada Obi",
     amountNgn: 5000,
     amountUsdc: "3.0000000",

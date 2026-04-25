@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID, createHash } from "crypto";
 import type { Gift, GiftStatus } from "@/types";
 import type { CreateGiftInput } from "@/types/schemas";
 import { initializePayment, ngnToKobo } from "@/lib/paystack";
@@ -11,6 +11,11 @@ import { getExchangeRate } from "@/server/services/exchange-rate.service";
 export async function ngnToUsdc(ngn: number): Promise<string> {
   const { ngnPerUsdc } = await getExchangeRate();
   return (ngn / ngnPerUsdc).toFixed(7);
+}
+
+/** Hash a phone number for storage. Plaintext is never persisted. */
+export function hashPhone(phone: string): string {
+  return createHash("sha256").update(phone).digest("hex");
 }
 
 // ─── In-memory store (replace with DB in production) ─────────────────────────
@@ -26,7 +31,7 @@ export async function createGift(
   const gift: Gift = {
     id,
     senderId,
-    recipientPhone: input.recipientPhone,
+    recipientPhoneHash: hashPhone(input.recipientPhone),
     recipientName: input.recipientName,
     amountNgn: input.amountNgn,
     amountUsdc,
@@ -91,7 +96,8 @@ export async function getGiftsBySenderPaginated(
 }
 
 export async function getGiftsByRecipient(phone: string): Promise<Gift[]> {
-  return [...gifts.values()].filter((g) => g.recipientPhone === phone);
+  const hash = hashPhone(phone);
+  return [...gifts.values()].filter((g) => g.recipientPhoneHash === hash);
 }
 
 export async function cancelGift(id: string): Promise<Gift | null> {
