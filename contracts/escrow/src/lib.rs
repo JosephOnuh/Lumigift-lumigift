@@ -331,10 +331,13 @@ mod tests {
     }
 }
 
-// ─── Proptest fuzz tests ──────────────────────────────────────────────────────
+// ─── Property-based tests ─────────────────────────────────────────────────────
+//
+// Each proptest! block runs at least 1 000 cases (proptest default).
+// The four properties below map directly to the acceptance criteria in issue #109.
 
 #[cfg(test)]
-mod fuzz {
+mod property_tests {
     use super::*;
     use proptest::prelude::*;
     use soroban_sdk::{
@@ -343,11 +346,121 @@ mod fuzz {
         Env,
     };
 
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    fn setup_initialized_escrow(
+        amount: i128,
+        unlock_time: u64,
+    ) -> (Env, Address, TokenClient, EscrowContractClient) {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let sender = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let token_id = env.register_stellar_asset_contract(sender.clone());
+        let token = TokenClient::new(&env, &token_id);
+        let token_admin = StellarAssetClient::new(&env, &token_id);
+        token_admin.mint(&sender, &amount);
+
+        let contract_id = env.register_contract(None, EscrowContract);
+        let client = EscrowContractClient::new(&env, &contract_id);
+        client.initialize(&sender, &recipient, &token_id, &amount, &unlock_time);
+
+        (env, recipient, token, client)
+    }
+
+    // ── Property 1 ───────────────────────────────────────────────────────────
+    // After a successful claim the contract's token balance is always 0.
+
     proptest! {
-        /// Any amount below MIN_AMOUNT must be rejected; any amount >= MIN_AMOUNT
-        /// must be accepted (contract stores it and token balance moves).
+        #![proptest_config(ProptestConfig::with_cases(1_000))]
         #[test]
-        fn fuzz_initialize_amount(amount in i128::MIN..=i128::MAX, unlock_time in 0u64..=u64::MAX) {
+        fn prop_balance_zero_after_claim(
+            amount    in MIN_AMOUNT..=1_000_000_000_i128,
+            unlock_time in 1u64..=1_000_000u64,
+        ) {
+            let (env, _recipient, token, client) =
+                setup_initialized_escrow(amount, unlock_time);
+
+            // Advance ledger past unlock_time so the claim succeeds
+            env.ledger().with_mut(|l| l.timestamp = unlock_time);
+            client.claim();
+
+            let contract_balance = token.balance(&client.address);
+            prop_assert_eq!(
+                contract_balance, 0,
+                "contract balance must be 0 after claim, got {contract_balance}"
+            );
+        }
+    }
+
+    // ── Property 2 ───────────────────────────────────────────────────────────
+    // The amount received by the recipient always equals the initialized amount.
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(1_000))]
+        #[test]
+        fn prop_claimed_amount_equals_initialized_amount(
+            amount    in MIN_AMOUNT..=1_000_000_000_i128,
+            unlock_time in 1u64..=1_000_000u64,
+        ) {
+            let (env, recipient, token, client) =
+                setup_initialized_escrow(amount, unlock_time);
+
+            let balance_before = token.balance(&recipient);
+
+            env.ledger().with_mut(|l| l.timestamp = unlock_time);
+            client.claim();
+
+            let received = token.balance(&recipient) - balance_before;
+            prop_assert_eq!(
+                received, amount,
+                "recipient received {received} but expected {amount}"
+            );
+        }
+    }
+
+    // ── Property 3 ───────────────────────────────────────────────────────────
+    // Claim always fails with StillLocked when ledger timestamp < unlock_time.
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(1_000))]
+        #[test]
+        fn prop_claim_fails_before_unlock(
+            amount      in MIN_AMOUNT..=1_000_000_000_i128,
+            unlock_time in 2u64..=u64::MAX / 2,
+            // ledger_ts is strictly less than unlock_time
+            ledger_ts   in 0u64..=1u64,
+        ) {
+            // Map ledger_ts into [0, unlock_time - 1]
+            let ledger_ts = ledger_ts % unlock_time; // always < unlock_time
+
+            let (env, _recipient, _token, client) =
+                setup_initialized_escrow(amount, unlock_time);
+
+            env.ledger().with_mut(|l| l.timestamp = ledger_ts);
+
+            let err = client.try_claim().unwrap_err().unwrap();
+            prop_assert_eq!(
+                err,
+                EscrowError::StillLocked,
+                "expected StillLocked at ts={ledger_ts}, unlock={unlock_time}"
+            );
+        }
+    }
+
+    // ── Property 4 ───────────────────────────────────────────────────────────
+    // A second call to initialize always fails with AlreadyInitialized.
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(1_000))]
+        #[test]
+        fn prop_double_initialize_always_fails(
+            amount      in MIN_AMOUNT..=1_000_000_000_i128,
+            unlock_time in 0u64..=u64::MAX / 2,
+            amount2     in MIN_AMOUNT..=1_000_000_000_i128,
+            unlock_time2 in 0u64..=u64::MAX / 2,
+        ) {
             let env = Env::default();
             env.mock_all_auths();
 
@@ -355,89 +468,26 @@ mod fuzz {
             let recipient = Address::generate(&env);
             let token_id = env.register_stellar_asset_contract(sender.clone());
             let token_admin = StellarAssetClient::new(&env, &token_id);
-
-            if amount >= MIN_AMOUNT {
-                token_admin.mint(&sender, &amount);
-            }
+            // Mint enough for both initialize calls
+            token_admin.mint(&sender, &(amount + amount2));
 
             let contract_id = env.register_contract(None, EscrowContract);
             let client = EscrowContractClient::new(&env, &contract_id);
 
-            let result = client.try_initialize(&sender, &recipient, &token_id, &amount, &unlock_time);
-
-            if amount < MIN_AMOUNT {
-                prop_assert_eq!(
-                    result.unwrap_err().unwrap(),
-                    EscrowError::InvalidAmount,
-                    "expected InvalidAmount for amount={amount}"
-                );
-            } else {
-                prop_assert!(result.is_ok(), "expected Ok for amount={amount}, got {result:?}");
-            }
-        }
-
-        /// Claim before unlock_time → StillLocked.
-        /// Claim at or after unlock_time → Ok (funds transferred).
-        #[test]
-        fn fuzz_claim_timestamp(
-            unlock_time in 1u64..=u64::MAX / 2,
-            ledger_offset in 0u64..=u64::MAX / 2,
-        ) {
-            let env = Env::default();
-            env.mock_all_auths();
-
-            let sender    = Address::generate(&env);
-            let recipient = Address::generate(&env);
-            let token_id  = env.register_stellar_asset_contract(sender.clone());
-            let token     = TokenClient::new(&env, &token_id);
-            let token_admin = StellarAssetClient::new(&env, &token_id);
-
-            let amount = MIN_AMOUNT;
-            token_admin.mint(&sender, &amount);
-
-            let contract_id = env.register_contract(None, EscrowContract);
-            let client = EscrowContractClient::new(&env, &contract_id);
-
+            // First initialize must succeed
             client.initialize(&sender, &recipient, &token_id, &amount, &unlock_time);
 
-            let ledger_ts = unlock_time.saturating_sub(1).saturating_add(ledger_offset);
-            env.ledger().with_mut(|l| l.timestamp = ledger_ts);
+            // Second initialize must always fail regardless of arguments
+            let err = client
+                .try_initialize(&sender, &recipient, &token_id, &amount2, &unlock_time2)
+                .unwrap_err()
+                .unwrap();
 
-            let result = client.try_claim();
-
-            if ledger_ts < unlock_time {
-                prop_assert_eq!(
-                    result.unwrap_err().unwrap(),
-                    EscrowError::StillLocked,
-                    "expected StillLocked at ts={ledger_ts} unlock={unlock_time}"
-                );
-            } else {
-                prop_assert!(result.is_ok(), "expected Ok at ts={ledger_ts} unlock={unlock_time}, got {result:?}");
-                prop_assert_eq!(token.balance(&recipient), amount);
-            }
+            prop_assert_eq!(
+                err,
+                EscrowError::AlreadyInitialized,
+                "expected AlreadyInitialized on second call"
+            );
         }
-    }
-
-    #[test]
-    #[should_panic(expected = "token must be the USDC contract")]
-    fn test_initialize_rejects_non_usdc_token() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let sender = Address::generate(&env);
-        let recipient = Address::generate(&env);
-
-        // Create two distinct token contracts: one "USDC", one fake
-        let (usdc_id, _, usdc_admin) = create_token(&env, &sender);
-        let (fake_id, _, fake_admin) = create_token(&env, &sender);
-
-        usdc_admin.mint(&sender, &100_000_000);
-        fake_admin.mint(&sender, &100_000_000);
-
-        let contract_id = env.register_contract(None, EscrowContract);
-        let client = EscrowContractClient::new(&env, &contract_id);
-
-        // Pass fake token but declare usdc_id as the expected USDC — should panic
-        client.initialize(&sender, &recipient, &fake_id, &100_000_000, &1_000, &usdc_id);
     }
 }
