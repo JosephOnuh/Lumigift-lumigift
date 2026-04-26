@@ -29,10 +29,14 @@ pub enum EscrowError {
     Unauthorized       = 5,
     AlreadyCancelled   = 6,
     InvalidAmount      = 7,
+    InvalidUnlockTime  = 8,
 }
 
 /// Minimum escrow amount: 1 USDC expressed in stroops (7 decimal places).
 const MIN_AMOUNT: i128 = 10_000_000;
+
+/// Minimum lock duration: 1 hour in seconds.
+const MIN_LOCK_DURATION: u64 = 3_600;
 
 // ─── Storage keys ─────────────────────────────────────────────────────────────
 
@@ -68,6 +72,11 @@ impl EscrowContract {
 
         if amount < MIN_AMOUNT {
             return Err(EscrowError::InvalidAmount);
+        }
+
+        // unlock_time must be at least MIN_LOCK_DURATION seconds in the future
+        if unlock_time <= env.ledger().timestamp().saturating_add(MIN_LOCK_DURATION) {
+            return Err(EscrowError::InvalidUnlockTime);
         }
 
         // Reject any token that is not the expected USDC contract
@@ -209,8 +218,9 @@ mod tests {
         let contract_id = env.register_contract(None, EscrowContract);
         let client = EscrowContractClient::new(&env, &contract_id);
 
-        client.initialize(&sender, &recipient, &token_id, &100_000_000, &1_000);
-        env.ledger().with_mut(|l| l.timestamp = 1_001);
+        // unlock_time must be > ledger.timestamp() + MIN_LOCK_DURATION (3600)
+        client.initialize(&sender, &recipient, &token_id, &100_000_000, &3_601);
+        env.ledger().with_mut(|l| l.timestamp = 3_601);
         client.claim();
 
         assert_eq!(token.balance(&recipient), 100_000_000);
@@ -229,10 +239,10 @@ mod tests {
         let contract_id = env.register_contract(None, EscrowContract);
         let client = EscrowContractClient::new(&env, &contract_id);
 
-        client.initialize(&sender, &recipient, &token_id, &100_000_000, &1_000);
+        client.initialize(&sender, &recipient, &token_id, &100_000_000, &3_601);
 
         let err = client
-            .try_initialize(&sender, &recipient, &token_id, &100_000_000, &1_000)
+            .try_initialize(&sender, &recipient, &token_id, &100_000_000, &3_601)
             .unwrap_err()
             .unwrap();
         assert_eq!(err, EscrowError::AlreadyInitialized);
@@ -270,8 +280,8 @@ mod tests {
         let contract_id = env.register_contract(None, EscrowContract);
         let client = EscrowContractClient::new(&env, &contract_id);
 
-        client.initialize(&sender, &recipient, &token_id, &100_000_000, &1_000);
-        env.ledger().with_mut(|l| l.timestamp = 1_001);
+        client.initialize(&sender, &recipient, &token_id, &100_000_000, &3_601);
+        env.ledger().with_mut(|l| l.timestamp = 3_601);
         client.claim();
 
         let err = client.try_claim().unwrap_err().unwrap();
@@ -329,6 +339,100 @@ mod tests {
             .unwrap();
         assert_eq!(err, EscrowError::InvalidAmount);
     }
+
+    #[test]
+    fn test_initialize_past_unlock_time_returns_invalid_unlock_time() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let sender = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let (token_id, _, token_admin) = create_token(&env, &sender);
+        token_admin.mint(&sender, &100_000_000);
+
+        // Set ledger timestamp to a known value
+        env.ledger().with_mut(|l| l.timestamp = 10_000);
+
+        let contract_id = env.register_contract(None, EscrowContract);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        // unlock_time in the past
+        let err = client
+            .try_initialize(&sender, &recipient, &token_id, &100_000_000, &5_000)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, EscrowError::InvalidUnlockTime);
+    }
+
+    #[test]
+    fn test_initialize_current_timestamp_returns_invalid_unlock_time() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let sender = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let (token_id, _, token_admin) = create_token(&env, &sender);
+        token_admin.mint(&sender, &100_000_000);
+
+        env.ledger().with_mut(|l| l.timestamp = 10_000);
+
+        let contract_id = env.register_contract(None, EscrowContract);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        // unlock_time == current timestamp (not in the future by MIN_LOCK_DURATION)
+        let err = client
+            .try_initialize(&sender, &recipient, &token_id, &100_000_000, &10_000)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, EscrowError::InvalidUnlockTime);
+    }
+
+    #[test]
+    fn test_initialize_unlock_time_just_below_minimum_duration_returns_invalid_unlock_time() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let sender = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let (token_id, _, token_admin) = create_token(&env, &sender);
+        token_admin.mint(&sender, &100_000_000);
+
+        env.ledger().with_mut(|l| l.timestamp = 10_000);
+
+        let contract_id = env.register_contract(None, EscrowContract);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        // unlock_time = now + MIN_LOCK_DURATION (must be strictly greater)
+        let err = client
+            .try_initialize(&sender, &recipient, &token_id, &100_000_000, &13_600)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, EscrowError::InvalidUnlockTime);
+    }
+
+    #[test]
+    fn test_initialize_valid_unlock_time_succeeds() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let sender = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let (token_id, token, token_admin) = create_token(&env, &sender);
+        token_admin.mint(&sender, &100_000_000);
+
+        env.ledger().with_mut(|l| l.timestamp = 10_000);
+
+        let contract_id = env.register_contract(None, EscrowContract);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        // unlock_time = now + MIN_LOCK_DURATION + 1 (valid)
+        client.initialize(&sender, &recipient, &token_id, &100_000_000, &13_601);
+
+        // Advance past unlock and claim
+        env.ledger().with_mut(|l| l.timestamp = 13_601);
+        client.claim();
+        assert_eq!(token.balance(&recipient), 100_000_000);
+    }
 }
 
 // ─── Property-based tests ─────────────────────────────────────────────────────
@@ -377,7 +481,7 @@ mod property_tests {
         #[test]
         fn prop_balance_zero_after_claim(
             amount    in MIN_AMOUNT..=1_000_000_000_i128,
-            unlock_time in 1u64..=1_000_000u64,
+            unlock_time in (MIN_LOCK_DURATION + 1)..=1_000_000u64,
         ) {
             let (env, _recipient, token, client) =
                 setup_initialized_escrow(amount, unlock_time);
@@ -402,7 +506,7 @@ mod property_tests {
         #[test]
         fn prop_claimed_amount_equals_initialized_amount(
             amount    in MIN_AMOUNT..=1_000_000_000_i128,
-            unlock_time in 1u64..=1_000_000u64,
+            unlock_time in (MIN_LOCK_DURATION + 1)..=1_000_000u64,
         ) {
             let (env, recipient, token, client) =
                 setup_initialized_escrow(amount, unlock_time);
@@ -428,7 +532,7 @@ mod property_tests {
         #[test]
         fn prop_claim_fails_before_unlock(
             amount      in MIN_AMOUNT..=1_000_000_000_i128,
-            unlock_time in 2u64..=u64::MAX / 2,
+            unlock_time in (MIN_LOCK_DURATION + 2)..=u64::MAX / 2,
             // ledger_ts is strictly less than unlock_time
             ledger_ts   in 0u64..=1u64,
         ) {
@@ -457,9 +561,9 @@ mod property_tests {
         #[test]
         fn prop_double_initialize_always_fails(
             amount      in MIN_AMOUNT..=1_000_000_000_i128,
-            unlock_time in 0u64..=u64::MAX / 2,
+            unlock_time in (MIN_LOCK_DURATION + 1)..=u64::MAX / 2,
             amount2     in MIN_AMOUNT..=1_000_000_000_i128,
-            unlock_time2 in 0u64..=u64::MAX / 2,
+            unlock_time2 in (MIN_LOCK_DURATION + 1)..=u64::MAX / 2,
         ) {
             let env = Env::default();
             env.mock_all_auths();
