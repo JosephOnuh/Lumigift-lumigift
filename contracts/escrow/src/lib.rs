@@ -249,6 +249,42 @@ mod tests {
     }
 
     #[test]
+    fn test_reinitialize_does_not_alter_original_state() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let sender = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let attacker = Address::generate(&env);
+        let (token_id, _, token_admin) = create_token(&env, &sender);
+        // Mint enough for both the original init and the attempted re-init
+        token_admin.mint(&sender, &200_000_000);
+
+        let contract_id = env.register_contract(None, EscrowContract);
+        let client = EscrowContractClient::new(&env, &contract_id);
+
+        // First initialization — establishes the original state
+        let original_amount: i128 = 100_000_000;
+        let original_unlock: u64 = 9_999;
+        client.initialize(&sender, &recipient, &token_id, &original_amount, &original_unlock);
+
+        // Attempt re-initialization with different values — must fail
+        let err = client
+            .try_initialize(&attacker, &attacker, &token_id, &50_000_000, &1)
+            .unwrap_err()
+            .unwrap();
+        assert_eq!(err, EscrowError::AlreadyInitialized);
+
+        // Verify original state is completely unchanged
+        let (state_recipient, state_amount, state_unlock, state_claimed) =
+            client.get_state();
+        assert_eq!(state_recipient, recipient, "recipient must not change after failed re-init");
+        assert_eq!(state_amount, original_amount, "amount must not change after failed re-init");
+        assert_eq!(state_unlock, original_unlock, "unlock_time must not change after failed re-init");
+        assert!(!state_claimed, "claimed flag must remain false after failed re-init");
+    }
+
+    #[test]
     fn test_claim_before_unlock_returns_error() {
         let env = Env::default();
         env.mock_all_auths();
