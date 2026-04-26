@@ -32,6 +32,22 @@ This project follows our [Code of Conduct](CODE_OF_CONDUCT.md). By participating
 | npm | ≥ 10 |
 | Rust | stable (for contract work) |
 | Stellar CLI | latest |
+| gitleaks | ≥ 8 (required for pre-commit secret scanning) |
+
+Install gitleaks before your first commit:
+
+```bash
+# macOS
+brew install gitleaks
+
+# Linux (replace VERSION with latest from https://github.com/gitleaks/gitleaks/releases)
+VERSION=v8.30.1
+curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/${VERSION}/gitleaks_${VERSION#v}_linux_x64.tar.gz" \
+  | tar -xz -C /usr/local/bin gitleaks
+
+# Windows (via Chocolatey)
+choco install gitleaks
+```
 
 ### Setup
 
@@ -69,6 +85,33 @@ npm run format       # Prettier
 npm test             # Jest unit tests
 npm run contract:build  # Build Soroban WASM
 npm run contract:test   # Run Rust contract tests
+```
+
+### Secret scanning
+
+The pre-commit hook runs [gitleaks](https://github.com/gitleaks/gitleaks) on staged files before every commit. If it finds a potential secret, the commit is blocked and the match is shown (value redacted).
+
+**If you get a false positive** (e.g. a test fixture or placeholder value), add an allowlist entry to `.gitleaks.toml` and commit that change first:
+
+```toml
+[[rules.allowlist]]
+description = "Explain why this is not a real secret"
+paths = ["path/to/file"]
+regexes = ["the-matching-pattern"]
+```
+
+Never disable the hook entirely or use `--no-verify` to bypass it. If you believe the detection is wrong, open an issue or update the allowlist instead.
+
+**To run the scan manually** against all staged changes:
+
+```bash
+gitleaks protect --staged --config=.gitleaks.toml --redact
+```
+
+**To scan the full repo history:**
+
+```bash
+gitleaks detect --config=.gitleaks.toml --redact
 ```
 
 ---
