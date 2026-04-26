@@ -51,11 +51,47 @@ async function handleDeviceCheck(
   }
 }
 
+const isProd = process.env.NODE_ENV === "production";
+
+// Cookie security flags — enforced in production, relaxed locally so HTTP dev
+// server works without HTTPS.
+const secureCookieOptions = {
+  httpOnly: true,
+  sameSite: "strict" as const,
+  secure: isProd,
+  path: "/",
+};
+
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
   pages: {
     signIn: "/auth/login",
     error: "/auth/error",
+  },
+  cookies: {
+    sessionToken: {
+      name: isProd
+        ? "__Secure-next-auth.session-token"
+        : "next-auth.session-token",
+      options: secureCookieOptions,
+    },
+    callbackUrl: {
+      name: isProd
+        ? "__Secure-next-auth.callback-url"
+        : "next-auth.callback-url",
+      options: secureCookieOptions,
+    },
+    csrfToken: {
+      // CSRF token must be readable by the login form JS, so HttpOnly is false.
+      // It is still Secure + SameSite=Strict in production.
+      name: isProd
+        ? "__Host-next-auth.csrf-token"
+        : "next-auth.csrf-token",
+      options: {
+        ...secureCookieOptions,
+        httpOnly: false,
+      },
+    },
   },
   providers: [
     CredentialsProvider({
