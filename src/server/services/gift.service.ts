@@ -26,7 +26,7 @@ export function hashPhone(phone: string): string {
 }
 
 // ─── In-memory store (replace with DB in production) ─────────────────────────
-const gifts = new Map<string, Gift>();
+export const gifts = new Map<string, Gift>();
 
 /**
  * Creates a new gift record and initializes a Paystack payment session.
