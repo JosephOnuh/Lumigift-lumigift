@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import * as Sentry from "@sentry/nextjs";
 import { authOptions } from "@/lib/auth";
 import { ApiError } from "@/types";
 
@@ -30,6 +31,7 @@ export function withErrorHandler(handler: Handler): Handler {
       return res;
     } catch (err) {
       console.error("[API Error]", err);
+      Sentry.captureException(err, { extra: { url: req.url, method: req.method } });
       const res = NextResponse.json<ApiError>(
         { success: false, error: "Internal server error", code: "INTERNAL_ERROR" },
         { status: 500 }
