@@ -48,6 +48,11 @@ export const serverConfig = {
     idleTimeoutMs: parseInt(process.env.DB_IDLE_TIMEOUT_MS ?? "10000", 10),
     connectionTimeoutMs: parseInt(process.env.DB_CONNECTION_TIMEOUT_MS ?? "5000", 10),
   },
+  giftLimits: {
+    minAmountNgn: parseInt(process.env.GIFT_MIN_AMOUNT_NGN ?? "500", 10),
+    maxAmountNgn: parseInt(process.env.GIFT_MAX_AMOUNT_NGN ?? "500000", 10),
+    dailyLimitNgn: parseInt(process.env.GIFT_DAILY_LIMIT_NGN ?? "1000000", 10),
+  },
 } as const;
 
 export function validateServerConfig() {

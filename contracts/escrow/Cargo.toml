@@ -13,6 +13,14 @@ soroban-sdk = { version = "25.3.1", features = ["alloc"] }
 soroban-sdk = { version = "25.3.1", features = ["testutils"] }
 proptest = { version = "1", default-features = false, features = ["std"] }
 
+[[bench]]
+name = "escrow_bench"
+harness = false
+
+[dev-dependencies.criterion]
+version = "0.5"
+features = ["html_reports"]
+
 [profile.release]
 opt-level = "z"
 overflow-checks = true

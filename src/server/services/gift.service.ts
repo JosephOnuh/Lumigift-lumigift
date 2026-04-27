@@ -44,6 +44,19 @@ export async function createGift(
   senderId: string,
   input: CreateGiftInput
 ): Promise<{ gift: Gift; paymentUrl: string }> {
+  // ── Daily sending limit check ──────────────────────────────────────────────
+  const { dailyLimitNgn } = serverConfig.giftLimits;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayTotal = [...gifts.values()]
+    .filter((g) => g.senderId === senderId && g.createdAt >= todayStart)
+    .reduce((sum, g) => sum + g.amountNgn, 0);
+  if (todayTotal + input.amountNgn > dailyLimitNgn) {
+    throw new Error(
+      `Daily sending limit of ₦${dailyLimitNgn.toLocaleString()} exceeded`
+    );
+  }
+
   const id = randomUUID();
   const amountUsdc = await ngnToUsdc(input.amountNgn);
 
