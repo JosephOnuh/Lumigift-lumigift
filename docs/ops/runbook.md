@@ -281,3 +281,40 @@ Lumigift Team
 ---
 
 *This runbook is reviewed quarterly and updated as systems evolve. Last reviewed: [Date]*
+
+## NEXTAUTH_SECRET Key Rotation
+
+### Overview
+Rotating `NEXTAUTH_SECRET` without disrupting active sessions requires a two-phase
+approach using `NEXTAUTH_SECRET_PREVIOUS`. Old tokens are accepted for a configurable
+grace period (default 24 hours) while new tokens are issued with the new secret.
+
+### Rotation Procedure
+
+**Phase 1 — Introduce new secret (zero downtime)**
+
+1. Generate a new secret:
+   ```bash
+   openssl rand -base64 32
+   ```
+2. In your deployment environment (Vercel / cloud provider):
+   - Set `NEXTAUTH_SECRET_PREVIOUS` = current value of `NEXTAUTH_SECRET`
+   - Set `NEXTAUTH_SECRET` = new secret
+   - Optionally set `NEXTAUTH_ROTATION_GRACE_HOURS` (default `24`)
+3. Deploy. New tokens are signed with the new secret; old tokens are still
+   accepted during the grace window.
+
+**Phase 2 — Remove old secret (after grace period)**
+
+1. Wait for `NEXTAUTH_ROTATION_GRACE_HOURS` to elapse (default 24 h).
+2. Remove (or blank) `NEXTAUTH_SECRET_PREVIOUS` from the environment.
+3. Deploy. Old tokens are now rejected and users will be prompted to log in again.
+
+### Rollback
+If the rotation causes unexpected issues, swap `NEXTAUTH_SECRET` back to the
+previous value and clear `NEXTAUTH_SECRET_PREVIOUS`. No data is lost.
+
+### Escalation
+- If users report mass session invalidation before the grace period ends, verify
+  `NEXTAUTH_SECRET_PREVIOUS` is set correctly and redeploy.
+- Escalate to engineering lead if the issue persists.

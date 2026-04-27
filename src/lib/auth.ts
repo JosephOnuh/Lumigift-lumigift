@@ -9,6 +9,7 @@ import { getCountryFromIp } from "@/lib/device";
 import { createHash } from "crypto";
 import { normalizePhone } from "@/lib/phone";
 import { verifyOtp } from "@/lib/otp";
+import { jwtRotationOptions } from "@/lib/jwt-rotation";
 
 function fingerprintFromHeaders(ua: string, lang: string, enc: string): string {
   return createHash("sha256").update(`${ua}|${lang}|${enc}`).digest("hex");
@@ -64,6 +65,7 @@ const secureCookieOptions = {
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
+  jwt: jwtRotationOptions,
   pages: {
     signIn: "/auth/login",
     error: "/auth/error",
