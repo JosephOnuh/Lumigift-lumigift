@@ -282,39 +282,43 @@ Lumigift Team
 
 *This runbook is reviewed quarterly and updated as systems evolve. Last reviewed: [Date]*
 
-## NEXTAUTH_SECRET Key Rotation
+## Log Aggregation
 
 ### Overview
-Rotating `NEXTAUTH_SECRET` without disrupting active sessions requires a two-phase
-approach using `NEXTAUTH_SECRET_PREVIOUS`. Old tokens are accepted for a configurable
-grace period (default 24 hours) while new tokens are issued with the new secret.
+All application logs are emitted as structured JSON (pino) to stdout. In production
+the log stream is shipped to **Logtail / Betterstack** via the `LOG_AGGREGATION_URL`
+and `LOG_AGGREGATION_TOKEN` environment variables.
 
-### Rotation Procedure
-
-**Phase 1 — Introduce new secret (zero downtime)**
-
-1. Generate a new secret:
-   ```bash
-   openssl rand -base64 32
+### Setup
+1. Create a **HTTP source** in Betterstack (or your chosen provider).
+2. Copy the ingest URL and token into your deployment environment:
    ```
-2. In your deployment environment (Vercel / cloud provider):
-   - Set `NEXTAUTH_SECRET_PREVIOUS` = current value of `NEXTAUTH_SECRET`
-   - Set `NEXTAUTH_SECRET` = new secret
-   - Optionally set `NEXTAUTH_ROTATION_GRACE_HOURS` (default `24`)
-3. Deploy. New tokens are signed with the new secret; old tokens are still
-   accepted during the grace window.
+   LOG_AGGREGATION_URL=https://in.logs.betterstack.com
+   LOG_AGGREGATION_TOKEN=<source-token>
+   ```
+3. Set `LOG_LEVEL=info` in production (use `debug` locally).
 
-**Phase 2 — Remove old secret (after grace period)**
+### Retention Policy
+Configure **30-day retention** in the Betterstack source settings
+(Sources → your source → Retention).
 
-1. Wait for `NEXTAUTH_ROTATION_GRACE_HOURS` to elapse (default 24 h).
-2. Remove (or blank) `NEXTAUTH_SECRET_PREVIOUS` from the environment.
-3. Deploy. Old tokens are now rejected and users will be prompted to log in again.
+### Alerts
+Configure the following alert rules in Betterstack (or equivalent):
 
-### Rollback
-If the rotation causes unexpected issues, swap `NEXTAUTH_SECRET` back to the
-previous value and clear `NEXTAUTH_SECRET_PREVIOUS`. No data is lost.
+| Alert | Condition | Channel |
+|-------|-----------|---------|
+| High error rate | `level = "error"` count > 10 in 5 min | Slack #incidents |
+| Auth failures | `service = "auth"` + `level = "error"` > 5 in 1 min | Slack #incidents |
+| Payment failures | `service = "paystack"` + `level = "error"` > 3 in 5 min | Slack #incidents |
 
-### Escalation
-- If users report mass session invalidation before the grace period ends, verify
-  `NEXTAUTH_SECRET_PREVIOUS` is set correctly and redeploy.
-- Escalate to engineering lead if the issue persists.
+### Key Metrics Dashboard
+Create a dashboard with these queries:
+
+- **Request rate**: count of `level = "info"` logs per minute
+- **Error rate**: count of `level = "error"` logs per minute
+- **Auth errors**: filter `service = "auth"` + `level = "error"`
+- **P95 latency**: if using pino-http, filter on `responseTime` field
+
+### Sensitive Data
+The logger redacts the following fields before shipping:
+`phone`, `recipientPhone`, `recipientPhoneHash`, `authorization`, `cookie`.

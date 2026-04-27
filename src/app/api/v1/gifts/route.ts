@@ -42,7 +42,11 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   }
 
   const userId = (session.user as { id: string }).id;
-  const { gift, paymentUrl } = await createGift(userId, parsed.data);
+  const { gift, paymentUrl } = await createGift(
+    userId,
+    parsed.data,
+    parsed.data.recipientIsRegistered
+  );
 
   return NextResponse.json<ApiResponse<{ gift: Gift; paymentUrl: string }>>(
     { success: true, data: { gift, paymentUrl } },

@@ -1,9 +1,12 @@
 import { randomUUID, createHash } from "crypto";
+import pool from "@/lib/db";
 import type { Gift, GiftStatus } from "@/types";
 import type { CreateGiftInput } from "@/types/schemas";
 import { initializePayment, ngnToKobo } from "@/lib/paystack";
 import { serverConfig } from "@/server/config";
 import { assertValidTransition } from "./gift-state-machine";
+import { createGiftInvitation } from "./invitation.service";
+import { sendGiftInvitation } from "@/lib/sms";
 
 // ─── Exchange rate helper ─────────────────────────────────────────────────────
 import { getExchangeRate } from "@/server/services/exchange-rate.service";
@@ -35,22 +38,40 @@ export const gifts = new Map<string, Gift>();
  * callback confirms the NGN payment, at which point it transitions to
  * `"funded"` and the USDC is locked in the escrow contract.
  *
+ * If the recipient is not registered, an invitation token is created and sent via SMS.
+ *
  * @param senderId - The authenticated user's ID.
  * @param input - Validated gift creation input (recipient, amount, unlock date, etc.).
+ * @param recipientIsRegistered - Whether the recipient is already registered on Lumigift.
  * @returns The created {@link Gift} and the Paystack `paymentUrl` to redirect the user to.
  * @throws If the exchange rate fetch or Paystack initialization fails.
  */
 export async function createGift(
   senderId: string,
-  input: CreateGiftInput
+  input: CreateGiftInput,
+  recipientIsRegistered: boolean = true
 ): Promise<{ gift: Gift; paymentUrl: string }> {
+  // ── Daily sending limit check ──────────────────────────────────────────────
+  const { dailyLimitNgn } = serverConfig.giftLimits;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayTotal = [...gifts.values()]
+    .filter((g) => g.senderId === senderId && g.createdAt >= todayStart)
+    .reduce((sum, g) => sum + g.amountNgn, 0);
+  if (todayTotal + input.amountNgn > dailyLimitNgn) {
+    throw new Error(
+      `Daily sending limit of ₦${dailyLimitNgn.toLocaleString()} exceeded`
+    );
+  }
+
   const id = randomUUID();
   const amountUsdc = await ngnToUsdc(input.amountNgn);
+  const recipientPhoneHash = hashPhone(input.recipientPhone);
 
   const gift: Gift = {
     id,
     senderId,
-    recipientPhoneHash: hashPhone(input.recipientPhone),
+    recipientPhoneHash,
     recipientName: input.recipientName,
     amountNgn: input.amountNgn,
     amountUsdc,
@@ -62,6 +83,32 @@ export async function createGift(
   };
 
   gifts.set(id, gift);
+
+  // If recipient is unregistered, create an invitation and send SMS
+  if (!recipientIsRegistered) {
+    try {
+      const invitationToken = await createGiftInvitation(
+        id,
+        recipientPhoneHash,
+        input.recipientPhone
+      );
+
+      // Get sender name for the invitation SMS
+      const { rows } = await pool.query<{ display_name: string }>(
+        "SELECT display_name FROM users WHERE id = $1",
+        [senderId]
+      );
+      const senderName = rows[0]?.display_name || "Someone";
+
+      // Send invitation SMS (fire-and-forget to not block payment flow)
+      sendGiftInvitation(input.recipientPhone, invitationToken, senderName).catch((err) =>
+        console.error("[gift] sendGiftInvitation failed:", err)
+      );
+    } catch (err) {
+      console.error("[gift] Failed to create/send invitation:", err);
+      // Don't block gift creation on invitation failure
+    }
+  }
 
   const payment = await initializePayment({
     email: `${senderId}@lumigift.app`, // placeholder; use real email from user record
