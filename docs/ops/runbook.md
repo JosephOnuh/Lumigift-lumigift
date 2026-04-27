@@ -281,3 +281,44 @@ Lumigift Team
 ---
 
 *This runbook is reviewed quarterly and updated as systems evolve. Last reviewed: [Date]*
+
+## Log Aggregation
+
+### Overview
+All application logs are emitted as structured JSON (pino) to stdout. In production
+the log stream is shipped to **Logtail / Betterstack** via the `LOG_AGGREGATION_URL`
+and `LOG_AGGREGATION_TOKEN` environment variables.
+
+### Setup
+1. Create a **HTTP source** in Betterstack (or your chosen provider).
+2. Copy the ingest URL and token into your deployment environment:
+   ```
+   LOG_AGGREGATION_URL=https://in.logs.betterstack.com
+   LOG_AGGREGATION_TOKEN=<source-token>
+   ```
+3. Set `LOG_LEVEL=info` in production (use `debug` locally).
+
+### Retention Policy
+Configure **30-day retention** in the Betterstack source settings
+(Sources → your source → Retention).
+
+### Alerts
+Configure the following alert rules in Betterstack (or equivalent):
+
+| Alert | Condition | Channel |
+|-------|-----------|---------|
+| High error rate | `level = "error"` count > 10 in 5 min | Slack #incidents |
+| Auth failures | `service = "auth"` + `level = "error"` > 5 in 1 min | Slack #incidents |
+| Payment failures | `service = "paystack"` + `level = "error"` > 3 in 5 min | Slack #incidents |
+
+### Key Metrics Dashboard
+Create a dashboard with these queries:
+
+- **Request rate**: count of `level = "info"` logs per minute
+- **Error rate**: count of `level = "error"` logs per minute
+- **Auth errors**: filter `service = "auth"` + `level = "error"`
+- **P95 latency**: if using pino-http, filter on `responseTime` field
+
+### Sensitive Data
+The logger redacts the following fields before shipping:
+`phone`, `recipientPhone`, `recipientPhoneHash`, `authorization`, `cookie`.
