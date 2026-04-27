@@ -18,6 +18,18 @@ The expiry check runs daily. Senders are encouraged to remind recipients to clai
 
 Lumigift processes payments via Paystack (NGN) and Stripe (international cards). All amounts are converted to USDC on the Stellar network. Exchange rates are indicative and may vary.
 
+### Gift Amount Limits
+
+To comply with Nigerian AML (Anti-Money Laundering) regulations:
+
+| Limit | Amount |
+|-------|--------|
+| Minimum gift amount | ₦500 per transaction |
+| Maximum gift amount | ₦500,000 per transaction |
+| Daily sending limit | ₦1,000,000 per user per day |
+
+These limits are enforced at both the frontend and backend. Transactions that exceed these limits will be rejected. Limits are configurable by Lumigift administrators and may change with regulatory requirements.
+
 ## 3. Liability
 
 Lumigift is not liable for losses arising from incorrect recipient phone numbers, unclaimed gifts, or network outages on the Stellar blockchain.

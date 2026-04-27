@@ -17,8 +17,14 @@ export const createGiftSchema = z.object({
   recipientName: z.string().min(2, "Name must be at least 2 characters"),
   amountNgn: z
     .number()
-    .min(500, "Minimum gift amount is ₦500")
-    .max(10_000_000, "Maximum gift amount is ₦10,000,000"),
+    .min(
+      parseInt(process.env.GIFT_MIN_AMOUNT_NGN ?? "500", 10),
+      `Minimum gift amount is ₦${parseInt(process.env.GIFT_MIN_AMOUNT_NGN ?? "500", 10).toLocaleString()}`
+    )
+    .max(
+      parseInt(process.env.GIFT_MAX_AMOUNT_NGN ?? "500000", 10),
+      `Maximum gift amount is ₦${parseInt(process.env.GIFT_MAX_AMOUNT_NGN ?? "500000", 10).toLocaleString()}`
+    ),
   message: z.string().max(500, "Message cannot exceed 500 characters").optional(),
   unlockAt: z
     .string()
