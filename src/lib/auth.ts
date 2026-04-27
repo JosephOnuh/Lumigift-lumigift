@@ -9,6 +9,9 @@ import { getCountryFromIp } from "@/lib/device";
 import { createHash } from "crypto";
 import { normalizePhone } from "@/lib/phone";
 import { verifyOtp } from "@/lib/otp";
+import { serviceLogger } from "@/lib/logger";
+
+const log = serviceLogger("auth");
 
 function fingerprintFromHeaders(ua: string, lang: string, enc: string): string {
   return createHash("sha256").update(`${ua}|${lang}|${enc}`).digest("hex");
@@ -40,7 +43,7 @@ async function handleDeviceCheck(
 
     // Fire-and-forget — don't block login on SMS failure
     sendNewDeviceAlert(phone, { time, country, reportUrl }).catch((err) =>
-      console.error("[auth] sendNewDeviceAlert failed:", err)
+      log.error({ err }, "sendNewDeviceAlert failed")
     );
   } else {
     // Known device — refresh last_seen_at
@@ -134,7 +137,7 @@ export const authOptions: NextAuthOptions = {
           await handleDeviceCheck(user.id, user.phone, fingerprint, ip);
         } catch (err) {
           // Never block login due to device-check errors
-          console.error("[auth] device check error:", err);
+          log.error({ err }, "device check error");
         }
 
         return user;
