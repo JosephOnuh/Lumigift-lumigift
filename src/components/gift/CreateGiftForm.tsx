@@ -102,9 +102,11 @@ export function CreateGiftForm() {
         type="number"
         placeholder="5000"
         min={500}
+        max={500000}
         error={errors.amountNgn?.message}
         {...register("amountNgn", { valueAsNumber: true })}
       />
+      <p className="input-hint">Min ₦500 · Max ₦500,000 · Daily limit ₦1,000,000</p>
 
       <Input
         label="Unlock Date & Time"
