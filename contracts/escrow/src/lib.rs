@@ -471,6 +471,143 @@ mod tests {
     }
 }
 
+// ─── Authorization tests (#62) ────────────────────────────────────────────────
+
+#[cfg(test)]
+mod auth_tests {
+    use super::*;
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger, MockAuth, MockAuthInvoke},
+        token::StellarAssetClient,
+        Env, IntoVal,
+    };
+
+    fn setup(env: &Env) -> (Address, Address, EscrowContractClient) {
+        let sender = Address::generate(env);
+        let recipient = Address::generate(env);
+        let token_id = env.register_stellar_asset_contract(sender.clone());
+        StellarAssetClient::new(env, &token_id).mint(&sender, &100_000_000);
+
+        let contract_id = env.register_contract(None, EscrowContract);
+        let client = EscrowContractClient::new(env, &contract_id);
+
+        // unlock_time = 3_601 (> 0 + MIN_LOCK_DURATION)
+        env.mock_all_auths();
+        client.initialize(&sender, &recipient, &token_id, &100_000_000, &3_601);
+
+        // Advance past unlock so the only barrier is auth, not time
+        env.ledger().with_mut(|l| l.timestamp = 3_601);
+
+        (sender, recipient, client)
+    }
+
+    /// A third-party address that is neither sender nor recipient must not be
+    /// able to claim. The contract calls `recipient.require_auth()`, so any
+    /// caller other than the stored recipient will fail authorization.
+    #[test]
+    fn test_third_party_cannot_claim() {
+        let env = Env::default();
+        let (_, _recipient, client) = setup(&env);
+
+        let attacker = Address::generate(&env);
+
+        // Authorize only the attacker — NOT the recipient.
+        // require_auth() will panic, which the test harness surfaces as an Err.
+        client
+            .mock_auths(&[MockAuth {
+                address: &attacker,
+                invoke: &MockAuthInvoke {
+                    contract: &client.address,
+                    fn_name: "claim",
+                    args: ().into_val(&env),
+                    sub_invokes: &[],
+                },
+            }])
+            .try_claim()
+            .expect_err("third-party must not be able to claim");
+    }
+
+    /// The sender must not be able to claim their own gift.
+    #[test]
+    fn test_sender_cannot_claim() {
+        let env = Env::default();
+        let (sender, _, client) = setup(&env);
+
+        // Authorize only the sender — NOT the recipient.
+        client
+            .mock_auths(&[MockAuth {
+                address: &sender,
+                invoke: &MockAuthInvoke {
+                    contract: &client.address,
+                    fn_name: "claim",
+                    args: ().into_val(&env),
+                    sub_invokes: &[],
+                },
+            }])
+            .try_claim()
+            .expect_err("sender must not be able to claim");
+    }
+}
+
+// ─── Boundary tests (#64) ─────────────────────────────────────────────────────
+//
+// The contract uses `env.ledger().timestamp() < unlock_time` (strict less-than).
+// Therefore:
+//   - timestamp == unlock_time  → claim SUCCEEDS  (boundary is inclusive)
+//   - timestamp == unlock_time - 1 → claim FAILS  (still locked)
+
+#[cfg(test)]
+mod boundary_tests {
+    use super::*;
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger},
+        token::{Client as TokenClient, StellarAssetClient},
+        Env,
+    };
+
+    fn setup_at(env: &Env, unlock_time: u64) -> EscrowContractClient {
+        env.mock_all_auths();
+        let sender = Address::generate(env);
+        let recipient = Address::generate(env);
+        let token_id = env.register_stellar_asset_contract(sender.clone());
+        StellarAssetClient::new(env, &token_id).mint(&sender, &100_000_000);
+
+        let contract_id = env.register_contract(None, EscrowContract);
+        let client = EscrowContractClient::new(env, &contract_id);
+        client.initialize(&sender, &recipient, &token_id, &100_000_000, &unlock_time);
+        client
+    }
+
+    /// Ledger timestamp == unlock_time: claim must SUCCEED.
+    /// The condition is `now < unlock_time`, so equality is NOT locked.
+    #[test]
+    fn test_claim_at_exactly_unlock_time_succeeds() {
+        let env = Env::default();
+        let unlock_time: u64 = 3_601;
+        let client = setup_at(&env, unlock_time);
+
+        // Set ledger to exactly unlock_time
+        env.ledger().with_mut(|l| l.timestamp = unlock_time);
+
+        // Must not return StillLocked
+        client.claim();
+    }
+
+    /// Ledger timestamp == unlock_time - 1: claim must FAIL with StillLocked.
+    #[test]
+    fn test_claim_one_second_before_unlock_fails() {
+        let env = Env::default();
+        let unlock_time: u64 = 3_601;
+        let client = setup_at(&env, unlock_time);
+
+        // One second before unlock
+        env.ledger().with_mut(|l| l.timestamp = unlock_time - 1);
+
+        let err = client.try_claim().unwrap_err().unwrap();
+        assert_eq!(err, EscrowError::StillLocked);
+    }
+}
+
 // ─── Property-based tests ─────────────────────────────────────────────────────
 //
 // Each proptest! block runs at least 1 000 cases (proptest default).
